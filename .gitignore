@@ -3,6 +3,7 @@ __pycache__/
 .Python
 .venv/
 venv/
+.smoke-venv/
 .env
 instance/
 .pytest_cache/

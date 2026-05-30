@@ -82,6 +82,42 @@ docker compose logs web
 
 Docker 镜像内使用 Gunicorn 启动 Flask 应用，并提供 `/healthz` 与 `/readyz` 健康检查接口。`docker-compose.yml` 中 web 与 MongoDB 均配置了 healthcheck，MongoDB 就绪后 web 才会启动。
 
+## Ubuntu 一键部署
+
+项目提供 `setup.sh`，面向 Ubuntu 20.04 / 22.04 / 24.04 服务器。脚本会安装基础依赖、Docker Engine、Docker Compose 插件，拉取 `Superories-D/mx-club` 仓库，生成 `.env`，创建 `docker-compose.override.yml`，启动服务并等待 `/readyz` 就绪。
+
+最简部署：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Superories-D/mx-club/main/setup.sh | sudo bash
+```
+
+常用生产部署参数：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Superories-D/mx-club/main/setup.sh | sudo bash -s -- \
+  --install-dir /opt/muxi-photo \
+  --port 5000 \
+  --secure-cookie \
+  --proxy-fix \
+  --noninteractive
+```
+
+脚本支持通过环境变量覆盖配置，例如：
+
+```bash
+sudo SITE_NAME="泸州高中木樨映像" HTTP_PORT=8080 bash setup.sh
+```
+
+部署完成后查看初始管理员：
+
+```bash
+cd /opt/muxi-photo
+docker compose -f docker-compose.yml -f docker-compose.override.yml logs web | grep 'super_admin'
+```
+
+公网部署建议不要暴露 MongoDB 端口。`setup.sh` 默认会在 override 文件中取消 MongoDB 宿主机端口映射；只有显式传入 `--expose-mongodb` 才会暴露 `27017`。
+
 ## 环境变量
 
 | 变量 | 说明 |

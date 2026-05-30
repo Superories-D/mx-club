@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.smoke-venv/
 .pytest_cache/
 .mypy_cache/
 tmp/
