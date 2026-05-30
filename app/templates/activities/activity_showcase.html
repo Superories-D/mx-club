@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ activity.title }}入选作品 - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <p class="eyebrow">Selected Works</p>
+  <h1>{{ activity.title }} · 入选作品</h1>
+  <div class="masonry">
+    {% for sub in submissions %}
+      {% for image in sub.images %}
+        <img class="standalone-photo" src="{{ image }}" alt="入选作品">
+      {% endfor %}
+    {% else %}
+      <div class="empty-block"><img src="{{ site_settings.empty_illustration }}" alt=""><p>暂无入选作品。</p></div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

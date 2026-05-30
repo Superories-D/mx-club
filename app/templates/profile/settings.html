@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}资料设置 - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="section narrow">
+  <p class="eyebrow">Settings</p>
+  <h1>个人资料设置</h1>
+  <form class="panel form-stack" method="post" enctype="multipart/form-data">
+    {{ csrf_field() }}
+    <input type="hidden" name="action" value="profile">
+    <label>头像<input type="file" name="avatar" accept="image/*"></label>
+    <label>昵称 / 用户名<input name="username" value="{{ current_user.username }}" required></label>
+    <label>简介<textarea name="bio" rows="4">{{ current_user.bio }}</textarea></label>
+    <label>联系方式<input name="contact" value="{{ current_user.contact }}"></label>
+    <button class="btn primary" type="submit">保存资料</button>
+  </form>
+  <form class="panel form-stack" method="post">
+    {{ csrf_field() }}
+    <input type="hidden" name="action" value="password">
+    <h2>修改密码</h2>
+    <label>旧密码<input type="password" name="old_password" required></label>
+    <label>新密码<input type="password" name="new_password" minlength="6" required></label>
+    <button class="btn" type="submit">修改密码</button>
+  </form>
+  <form class="panel form-stack danger-zone" method="post" data-confirm="确认注销账号？该操作会让账号无法继续登录。">
+    {{ csrf_field() }}
+    <input type="hidden" name="action" value="delete_account">
+    <h2>申请注销账号</h2>
+    <p>注销后账号将不可登录，已发布内容会保留为历史记录。</p>
+    <button class="btn danger" type="submit">注销账号</button>
+  </form>
+</section>
+{% endblock %}

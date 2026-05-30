@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="section narrow center">
+  <img class="empty-art" src="{{ site_settings.empty_illustration }}" alt="空状态">
+  <p class="eyebrow">{{ code }}</p>
+  <h1>{{ message }}</h1>
+  <p class="muted">请返回上一页，或回到首页继续浏览。</p>
+  <a class="btn primary" href="{{ url_for('main.index') }}">回到首页</a>
+</section>
+{% endblock %}

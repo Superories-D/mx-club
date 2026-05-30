@@ -1,0 +1,25 @@
+{% extends "admin/base.html" %}
+{% block title %}审计日志 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<h1>审计日志</h1>
+<form class="filter-bar" method="get"><input name="q" value="{{ q }}" placeholder="搜索操作类型"><button class="btn" type="submit">搜索</button></form>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>时间</th><th>管理员</th><th>操作</th><th>对象</th><th>详情</th><th>IP</th></tr></thead>
+    <tbody>
+      {% for log in logs %}
+        {% set user = users.get(log.admin_id) %}
+        <tr>
+          <td>{{ log.created_at|datetime }}</td>
+          <td>{{ user.username if user else '系统/未知' }}</td>
+          <td>{{ log.action }}</td>
+          <td>{{ log.target_type }} {{ log.target_id }}</td>
+          <td>{{ log.detail }}</td>
+          <td>{{ log.ip }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% include "pagination.html" %}
+{% endblock %}

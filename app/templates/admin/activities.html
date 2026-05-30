@@ -1,0 +1,18 @@
+{% extends "admin/base.html" %}
+{% block title %}活动管理 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<div class="section-head"><h1>活动管理</h1><a class="btn primary" href="{{ url_for('admin.activity_new') }}">创建活动</a></div>
+<form class="filter-bar" method="get"><input name="q" value="{{ q }}" placeholder="搜索活动"><select name="status"><option value="">全部状态</option><option value="draft" {% if status=='draft' %}selected{% endif %}>draft</option><option value="active" {% if status=='active' %}selected{% endif %}>active</option><option value="closed" {% if status=='closed' %}selected{% endif %}>closed</option><option value="showcased" {% if status=='showcased' %}selected{% endif %}>showcased</option></select><button class="btn" type="submit">搜索</button></form>
+<div class="card-grid">
+  {% for activity in activities %}
+  <article class="content-card admin-card">
+    <img src="{{ activity.cover_image or site_settings.activity_cover }}" alt="{{ activity.title }}">
+    <span class="badge">{{ activity.status }}</span>
+    <h3>{{ activity.title }}</h3>
+    <p>{{ activity.intro|truncate(90) }}</p>
+    <div class="action-row"><a class="btn small" href="{{ url_for('admin.activity_edit', activity_id=activity._id) }}">编辑</a><a class="btn small" href="{{ url_for('admin.submissions', activity_id=activity._id) }}">投稿</a><a class="btn small" href="{{ url_for('admin.download_submissions', activity_id=activity._id) }}">下载全部</a><a class="btn small" href="{{ url_for('admin.download_submissions', activity_id=activity._id, mode='selected') }}">下载入选</a><form method="post" action="{{ url_for('admin.activity_delete', activity_id=activity._id) }}" data-confirm="确认删除活动？">{{ csrf_field() }}<button class="btn small danger" type="submit">删除</button></form></div>
+  </article>
+  {% endfor %}
+</div>
+{% include "pagination.html" %}
+{% endblock %}

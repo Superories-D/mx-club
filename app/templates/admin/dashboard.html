@@ -1,0 +1,30 @@
+{% extends "admin/base.html" %}
+{% block title %}后台仪表盘 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<p class="eyebrow">Dashboard</p>
+<h1>数据仪表盘</h1>
+<div class="stat-grid">
+  <div><strong>{{ stats.users }}</strong><span>用户总数</span></div>
+  <div><strong>{{ stats.today_users }}</strong><span>今日新增用户</span></div>
+  <div><strong>{{ stats.posts }}</strong><span>社区帖子</span></div>
+  <div><strong>{{ stats.today_posts }}</strong><span>今日新增帖子</span></div>
+  <div><strong>{{ stats.activities }}</strong><span>活动总数</span></div>
+  <div><strong>{{ stats.pending_submissions }}</strong><span>待审核投稿</span></div>
+  <div><strong>{{ stats.likes }}</strong><span>总点赞数</span></div>
+  <div><strong>{{ stats.favorites }}</strong><span>总收藏数</span></div>
+</div>
+<div class="admin-columns">
+  <section class="panel">
+    <h2>最新注册用户</h2>
+    {% for user in latest_users %}<p><a href="{{ url_for('admin.user_detail', user_id=user._id) }}">{{ user.username }}</a> · {{ user.created_at|datetime }}</p>{% endfor %}
+  </section>
+  <section class="panel">
+    <h2>最新社区帖子</h2>
+    {% for post in latest_posts %}<p><a href="{{ url_for('community.detail', post_id=post._id) }}">{{ post.title }}</a> · {{ users.get(post.author_id).username if users.get(post.author_id) else '' }}</p>{% endfor %}
+  </section>
+  <section class="panel">
+    <h2>最新投稿</h2>
+    {% for sub in latest_submissions %}<p>{{ users.get(sub.user_id).username if users.get(sub.user_id) else '未知用户' }} · {{ activities.get(sub.activity_id).title if activities.get(sub.activity_id) else '未知活动' }} · {{ sub.status }}</p>{% endfor %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "admin/base.html" %}
+{% block title %}网站设置 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<h1>网站设置</h1>
+<form class="panel form-stack" method="post" enctype="multipart/form-data">
+  {{ csrf_field() }}
+  <div class="two-col">
+    <label>网站名称<input name="site_name" value="{{ settings.site_name or site_settings.site_name }}" required></label>
+    <label>主题色<input name="theme_color" value="{{ settings.theme_color or site_settings.theme_color }}" placeholder="#b8894f"></label>
+  </div>
+  <label>社团介绍<textarea name="club_intro" rows="4">{{ settings.club_intro or site_settings.club_intro }}</textarea></label>
+  <label>联系方式<textarea name="contact" rows="2">{{ settings.contact or site_settings.contact }}</textarea></label>
+  <label>页脚信息<input name="footer" value="{{ settings.footer or site_settings.footer }}"></label>
+  <div class="settings-assets">
+    {% set fields = [
+      ('logo','Logo', settings.logo or site_settings.logo),
+      ('home_banner','首页 Banner', settings.home_banner or site_settings.home_banner),
+      ('auth_background','默认背景图', settings.auth_background or site_settings.auth_background),
+      ('community_cover','社区默认封面', settings.community_cover or site_settings.community_cover),
+      ('activity_cover','活动默认封面', settings.activity_cover or site_settings.activity_cover),
+      ('default_avatar','默认头像', settings.default_avatar or site_settings.default_avatar),
+      ('empty_illustration','空状态插画', settings.empty_illustration or site_settings.empty_illustration)
+    ] %}
+    {% for field, label, value in fields %}
+      <div class="asset-row">
+        <div>{% if value %}<img src="{{ value }}" alt="{{ label }}">{% endif %}</div>
+        <label>{{ label }}<input type="file" name="{{ field }}" accept="image/*"></label>
+      </div>
+    {% endfor %}
+  </div>
+  <button class="btn primary" type="submit">保存设置</button>
+</form>
+{% endblock %}

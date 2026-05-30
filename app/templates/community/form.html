@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑作品' if post else '发布作品' }} - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="section narrow">
+  <p class="eyebrow">Photo work</p>
+  <h1>{{ '编辑作品' if post else '发布摄影作品' }}</h1>
+  <form class="panel form-stack" method="post" enctype="multipart/form-data">
+    {{ csrf_field() }}
+    <label>标题<input name="title" value="{{ post.title if post else '' }}" required></label>
+    <label>描述<textarea name="description" rows="5">{{ post.description if post else '' }}</textarea></label>
+    <label>作品图片<input type="file" name="images" accept="image/*" multiple {{ '' if post else 'required' }}></label>
+    {% if post and post.images %}
+      <div class="thumb-row">{% for image in post.images %}<img src="{{ image }}" alt="作品图">{% endfor %}</div>
+    {% endif %}
+    <div class="two-col">
+      <label>标签<input name="tags" value="{{ post.tags|join(',') if post else '' }}" placeholder="校园,胶片,光影"></label>
+      <label>设备<input name="device" value="{{ post.device if post else '' }}"></label>
+    </div>
+    <div class="two-col">
+      <label>拍摄地点<input name="location" value="{{ post.location if post else '' }}"></label>
+      <label>拍摄时间<input name="shoot_time" value="{{ post.shoot_time if post else '' }}" placeholder="2026-05-31"></label>
+    </div>
+    <button class="btn primary" type="submit">保存作品</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ activity.title }} - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="activity-hero">
+  <img src="{{ activity.cover_image or site_settings.activity_cover }}" alt="{{ activity.title }}">
+  <div>
+    <p class="eyebrow">{{ activity.status }} · {{ activity.start_time or '即日起' }} - {{ activity.end_time or '长期' }}</p>
+    <h1>{{ activity.title }}</h1>
+    <p>{{ activity.intro }}</p>
+  </div>
+</section>
+<section class="section detail-grid">
+  <article class="panel prose">
+    <h2>征集要求</h2>
+    <p>{{ activity.requirements|replace('\n','<br>')|safe }}</p>
+    <h2>上传说明</h2>
+    <p>{{ activity.upload_instructions|replace('\n','<br>')|safe }}</p>
+    {% if activity.sample_images %}
+      <h2>样本图片</h2>
+      <div class="thumb-row">{% for image in activity.sample_images %}<img src="{{ image }}" alt="样本图片">{% endfor %}</div>
+    {% endif %}
+  </article>
+  <aside class="panel">
+    <h2>提交投稿</h2>
+    {% if current_user and activity.status in ['active','showcased'] %}
+      <form class="form-stack" method="post" enctype="multipart/form-data" action="{{ url_for('activities.submit', activity_id=activity._id) }}">
+        {{ csrf_field() }}
+        <label>投稿图片<input type="file" name="images" accept="image/*" multiple required></label>
+        <label>投稿说明<textarea name="description" rows="4"></textarea></label>
+        <label>拍摄地点<input name="location"></label>
+        <label>拍摄时间<input name="shoot_time" placeholder="2026-05-31"></label>
+        <label>本次联系方式<input name="contact" value="{{ current_user.contact }}"></label>
+        <button class="btn primary" type="submit">提交投稿</button>
+      </form>
+    {% elif not current_user %}
+      <p class="muted">登录后可参与投稿。</p>
+      <a class="btn primary" href="{{ url_for('auth.login') }}">登录</a>
+    {% else %}
+      <p class="muted">活动当前不可投稿。</p>
+    {% endif %}
+  </aside>
+</section>
+<section class="section">
+  <div class="section-head">
+    <h2>已入选作品</h2>
+    <a href="{{ url_for('activities.activity_showcase', activity_id=activity._id) }}">查看专栏</a>
+  </div>
+  <div class="masonry">
+    {% for sub in selected %}
+      {% for image in sub.images %}
+        <img class="standalone-photo" src="{{ image }}" alt="入选作品">
+      {% endfor %}
+    {% else %}
+      <div class="empty-block"><img src="{{ site_settings.empty_illustration }}" alt=""><p>暂无入选作品。</p></div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

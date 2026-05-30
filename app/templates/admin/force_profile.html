@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}首次登录初始化 - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="auth-page" style="background-image: linear-gradient(90deg, rgba(255,255,255,.92), rgba(255,255,255,.58)), url('{{ site_settings.auth_background }}')">
+  <form class="auth-card" method="post">
+    {{ csrf_field() }}
+    <p class="eyebrow">First login</p>
+    <h1>完善初始管理员信息</h1>
+    <label>真实姓名<input name="real_name" value="{{ current_user.real_name }}" required></label>
+    <label>用户名 / 昵称<input name="username" value="{{ current_user.username }}" required></label>
+    <label>初始密码<input name="old_password" type="password" required></label>
+    <label>新密码<input name="new_password" type="password" minlength="6" required></label>
+    <button class="btn primary" type="submit">完成初始化</button>
+  </form>
+</section>
+{% endblock %}

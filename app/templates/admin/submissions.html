@@ -1,0 +1,43 @@
+{% extends "admin/base.html" %}
+{% block title %}投稿审核 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<h1>投稿审核</h1>
+<form class="filter-bar" method="get">
+  <select name="activity_id"><option value="">全部活动</option>{% for act in all_activities %}<option value="{{ act._id }}" {% if activity_id == act._id|string %}selected{% endif %}>{{ act.title }}</option>{% endfor %}</select>
+  <select name="status"><option value="">全部状态</option>{% for s in ['pending','selected','rejected','returned'] %}<option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">筛选</button>
+</form>
+<form id="batch-review-form" class="panel inline-form" method="post" action="{{ url_for('admin.batch_review') }}">
+  {{ csrf_field() }}
+  <select name="status" required><option value="selected">批量入选</option><option value="rejected">批量拒绝</option><option value="returned">批量退回</option></select>
+  <input name="admin_note" placeholder="审核备注">
+  <button class="btn primary" type="submit">批量审核所选</button>
+  <span class="muted">请先勾选下方投稿。</span>
+</form>
+<div class="submission-list">
+{% for sub in submissions %}
+  {% set user = users.get(sub.user_id) %}
+  {% set activity = activities.get(sub.activity_id) %}
+  <article class="panel submission-card">
+    <label class="check"><input class="submission-select" type="checkbox" name="submission_ids" value="{{ sub._id }}" form="batch-review-form"> 选择</label>
+    <div class="submission-images">{% for image in sub.images %}<a href="{{ image }}" target="_blank"><img src="{{ image }}" alt="投稿图片"></a>{% endfor %}</div>
+    <div>
+      <h3>{{ activity.title if activity else '未知活动' }} · <span class="badge">{{ sub.status }}</span></h3>
+      <p>投稿人：{{ user.username if user else '未知用户' }} / 联系方式：{{ sub.contact }}</p>
+      <p>{{ sub.description }}</p>
+      <p class="muted">{{ sub.location }} {{ sub.shoot_time }} · {{ sub.created_at|datetime }}</p>
+      {% if sub.admin_note %}<p>审核备注：{{ sub.admin_note }}</p>{% endif %}
+      <form class="inline-form" method="post" action="{{ url_for('admin.review_submission', submission_id=sub._id) }}">
+        {{ csrf_field() }}
+        <select name="status">{% for s in ['pending','selected','rejected','returned'] %}<option value="{{ s }}" {% if sub.status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+        <input name="admin_note" value="{{ sub.admin_note }}" placeholder="审核备注">
+        <button class="btn small" type="submit">保存审核</button>
+      </form>
+    </div>
+  </article>
+{% else %}
+  <div class="empty-block"><img src="{{ site_settings.empty_illustration }}" alt=""><p>暂无投稿。</p></div>
+{% endfor %}
+</div>
+{% include "pagination.html" %}
+{% endblock %}

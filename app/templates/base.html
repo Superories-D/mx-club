@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}{{ site_settings.site_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body style="--theme: {{ site_settings.theme_color|default('#b8894f') }}">
+  <header class="site-header">
+    <a class="brand" href="{{ url_for('main.index') }}">
+      {% if site_settings.logo %}
+        <img src="{{ site_settings.logo }}" alt="{{ site_settings.site_name }}">
+      {% else %}
+        <span class="brand-mark">木</span>
+      {% endif %}
+      <span>{{ site_settings.site_name }}</span>
+    </a>
+    <nav class="nav">
+      <a href="{{ url_for('community.list_posts') }}">摄影社区</a>
+      <a href="{{ url_for('activities.list_activities') }}">素材征集</a>
+      <a href="{{ url_for('main.showcase') }}">入选作品</a>
+      {% if current_user %}
+        <a href="{{ url_for('community.new_post') }}">发布作品</a>
+        <a href="{{ url_for('profile.user_home', user_id=current_user._id) }}">我的主页</a>
+        {% if current_user.role in ['admin', 'super_admin'] %}
+          <a href="{{ url_for('admin.dashboard') }}">后台</a>
+        {% endif %}
+        <a href="{{ url_for('auth.logout') }}">退出</a>
+      {% else %}
+        <a href="{{ url_for('auth.login') }}">登录</a>
+        <a class="nav-cta" href="{{ url_for('auth.register') }}">凭邀请码加入</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <section class="flash-wrap">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </section>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <p>{{ site_settings.footer }}</p>
+    <p>{{ site_settings.contact }}</p>
+  </footer>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

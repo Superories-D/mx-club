@@ -1,0 +1,15 @@
+{% extends "admin/base.html" %}
+{% block title %}用户详情 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<h1>{{ target.username }}</h1>
+<div class="panel">
+  <p>真实姓名：{{ target.real_name }}</p>
+  <p>完整联系方式：{{ target.contact }}</p>
+  <p>角色：{{ target.role }} · 状态：{{ target.status }}</p>
+  <p>创建时间：{{ target.created_at|datetime }} · 最近登录：{{ target.last_login_at|datetime }}</p>
+</div>
+<div class="admin-columns">
+  <section class="panel"><h2>近期作品</h2>{% for post in posts %}<p><a href="{{ url_for('community.detail', post_id=post._id) }}">{{ post.title }}</a> · {{ post.status }}</p>{% else %}<p>暂无</p>{% endfor %}</section>
+  <section class="panel"><h2>近期投稿</h2>{% for sub in submissions %}<p>{{ sub.status }} · {{ sub.created_at|datetime }}</p>{% else %}<p>暂无</p>{% endfor %}</section>
+</div>
+{% endblock %}

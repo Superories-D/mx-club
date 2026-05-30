@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <img src="{{ site_settings.home_banner }}" alt="木樨映像首页横幅">
+  <div class="hero-copy">
+    <p class="eyebrow">Muxi Photo / Campus Image</p>
+    <h1>把校园里的光，留成可以回看的影像。</h1>
+    <p>{{ site_settings.club_intro }}</p>
+    <div class="hero-actions">
+      <a class="btn primary" href="{{ url_for('community.list_posts') }}">浏览作品</a>
+      <a class="btn ghost" href="{{ url_for('activities.list_activities') }}">查看征集</a>
+    </div>
+  </div>
+</section>
+
+<section class="section intro-grid">
+  <div>
+    <p class="eyebrow">关于社团</p>
+    <h2>木樨映像，记录高中生活的光影档案。</h2>
+  </div>
+  <p class="lead">{{ site_settings.club_intro }} 这里既是摄影作品社区，也是校园活动影像素材的征集平台。</p>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Featured</p>
+      <h2>精选摄影作品</h2>
+    </div>
+    <a href="{{ url_for('community.list_posts') }}">全部作品</a>
+  </div>
+  <div class="photo-grid">
+    {% for post in featured_posts %}
+      {% set author = authors.get(post.author_id) %}
+      <a class="photo-card" href="{{ url_for('community.detail', post_id=post._id) }}">
+        <img src="{{ post.images[0] if post.images else site_settings.community_cover }}" alt="{{ post.title }}">
+        <div>
+          <h3>{{ post.title }}</h3>
+          <p>{{ author.username if author else '未知作者' }} · {{ post.like_count }} 赞</p>
+        </div>
+      </a>
+    {% else %}
+      <div class="empty-block"><img src="{{ site_settings.empty_illustration }}" alt=""><p>暂无精选作品。</p></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Latest</p>
+      <h2>最新社区作品</h2>
+    </div>
+  </div>
+  <div class="card-grid">
+    {% for post in latest_posts %}
+      {% set author = authors.get(post.author_id) %}
+      <a class="content-card" href="{{ url_for('community.detail', post_id=post._id) }}">
+        <img src="{{ post.images[0] if post.images else site_settings.community_cover }}" alt="{{ post.title }}">
+        <h3>{{ post.title }}</h3>
+        <p>{{ author.username if author else '未知作者' }} · {{ post.created_at|date }}</p>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="section warm-band">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Open Calls</p>
+      <h2>正在进行的素材征集</h2>
+    </div>
+    <a href="{{ url_for('activities.list_activities') }}">全部活动</a>
+  </div>
+  <div class="card-grid">
+    {% for activity in active_activities %}
+      <a class="content-card" href="{{ url_for('activities.detail', activity_id=activity._id) }}">
+        <img src="{{ activity.cover_image or site_settings.activity_cover }}" alt="{{ activity.title }}">
+        <span class="badge">{{ activity.status }}</span>
+        <h3>{{ activity.title }}</h3>
+        <p>{{ activity.end_time or '长期开放' }}</p>
+      </a>
+    {% else %}
+      <div class="empty-block"><img src="{{ site_settings.empty_illustration }}" alt=""><p>暂时没有开放中的征集。</p></div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

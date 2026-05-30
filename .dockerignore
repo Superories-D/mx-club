@@ -1,0 +1,16 @@
+.git
+.env
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+uploads/*
+!uploads/.gitkeep
+!uploads/*/
+!uploads/avatars/.gitkeep
+!uploads/posts/.gitkeep
+!uploads/activities/.gitkeep
+!uploads/submissions/.gitkeep
+!uploads/site_assets/.gitkeep

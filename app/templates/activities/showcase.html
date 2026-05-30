@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}入选作品 - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="section">
+  <p class="eyebrow">Selected Works</p>
+  <h1>活动入选作品</h1>
+  <div class="masonry">
+    {% for sub in submissions %}
+      {% set activity = activities.get(sub.activity_id) %}
+      {% for image in sub.images %}
+        <figure class="photo-card plain">
+          <img src="{{ image }}" alt="入选作品">
+          <figcaption>{{ activity.title if activity else '素材征集' }}</figcaption>
+        </figure>
+      {% endfor %}
+    {% else %}
+      <div class="empty-block"><img src="{{ site_settings.empty_illustration }}" alt=""><p>暂时没有入选作品。</p></div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

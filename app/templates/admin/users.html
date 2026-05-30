@@ -1,0 +1,50 @@
+{% extends "admin/base.html" %}
+{% block title %}用户管理 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<div class="section-head"><h1>用户管理</h1></div>
+<form class="filter-bar" method="get">
+  <input name="q" value="{{ q }}" placeholder="搜索用户名、姓名、联系方式">
+  <select name="role"><option value="">全部角色</option><option value="user" {% if role=='user' %}selected{% endif %}>user</option><option value="admin" {% if role=='admin' %}selected{% endif %}>admin</option><option value="super_admin" {% if role=='super_admin' %}selected{% endif %}>super_admin</option></select>
+  <select name="status"><option value="">全部状态</option><option value="active" {% if status=='active' %}selected{% endif %}>active</option><option value="banned" {% if status=='banned' %}selected{% endif %}>banned</option><option value="deleted" {% if status=='deleted' %}selected{% endif %}>deleted</option></select>
+  <button class="btn" type="submit">搜索</button>
+</form>
+{% if current_user.role == 'super_admin' %}
+<form class="panel inline-form" method="post" action="{{ url_for('admin.create_admin') }}">
+  {{ csrf_field() }}
+  <input name="username" placeholder="管理员用户名" required>
+  <input name="real_name" placeholder="真实姓名">
+  <input name="contact" placeholder="联系方式">
+  <button class="btn primary" type="submit">创建管理员</button>
+</form>
+{% endif %}
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>用户</th><th>真实姓名</th><th>联系方式</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+    <tbody>
+      {% for user in users %}
+      <tr>
+        <td><a href="{{ url_for('admin.user_detail', user_id=user._id) }}">{{ user.username }}</a></td>
+        <td>{{ user.real_name }}</td>
+        <td>{{ user.contact }}</td>
+        <td>{{ user.role }}</td>
+        <td><span class="badge">{{ user.status }}</span></td>
+        <td>{{ user.created_at|datetime }}</td>
+        <td class="actions">
+          {% if user._id != current_user._id %}
+            {% if current_user.role == 'super_admin' or user.role != 'super_admin' %}
+              <form method="post" action="{{ url_for('admin.user_action', user_id=user._id) }}">{{ csrf_field() }}<input type="hidden" name="action" value="{{ 'unban' if user.status=='banned' else 'ban' }}"><button class="btn small" type="submit">{{ '解封' if user.status=='banned' else '封禁' }}</button></form>
+              <form method="post" action="{{ url_for('admin.reset_password', user_id=user._id) }}" data-confirm="确认重置该用户密码？">{{ csrf_field() }}<button class="btn small" type="submit">重置密码</button></form>
+              <form method="post" action="{{ url_for('admin.user_action', user_id=user._id) }}" data-confirm="确认注销该账号？">{{ csrf_field() }}<input type="hidden" name="action" value="delete"><button class="btn small danger" type="submit">注销</button></form>
+              {% if current_user.role == 'super_admin' and user.role != 'super_admin' %}
+                <form method="post" action="{{ url_for('admin.user_action', user_id=user._id) }}">{{ csrf_field() }}<input type="hidden" name="action" value="role"><select name="role"><option value="user" {% if user.role=='user' %}selected{% endif %}>user</option><option value="admin" {% if user.role=='admin' %}selected{% endif %}>admin</option></select><button class="btn small" type="submit">改角色</button></form>
+              {% endif %}
+            {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% include "pagination.html" %}
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}注册 - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="auth-page" style="background-image: linear-gradient(90deg, rgba(255,255,255,.92), rgba(255,255,255,.58)), url('{{ site_settings.auth_background }}')">
+  <form class="auth-card" method="post">
+    {{ csrf_field() }}
+    <p class="eyebrow">Invitation only</p>
+    <h1>加入木樨映像</h1>
+    <label>邀请码<input name="invite_code" required></label>
+    <label>真实姓名<input name="real_name" required></label>
+    <label>昵称 / 用户名<input name="username" required></label>
+    <label>联系方式<input name="contact" required></label>
+    <label>登录密码<input name="password" type="password" minlength="6" required></label>
+    <button class="btn primary" type="submit">注册</button>
+    <p class="muted">邀请码必须与后台注册表中的真实姓名完全匹配，默认只能使用一次。</p>
+  </form>
+</section>
+{% endblock %}

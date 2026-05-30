@@ -1,0 +1,33 @@
+services:
+  web:
+    build: .
+    container_name: muxi_photo_web
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: development
+      SECRET_KEY: change-me-in-production
+      MONGO_URI: mongodb://mongodb:27017/muxi_photo
+      DATABASE_NAME: muxi_photo
+      UPLOAD_FOLDER: uploads
+      MAX_UPLOAD_SIZE_MB: 10
+      SITE_NAME: 泸州高中木樨映像
+      ADMIN_INIT_SHOW_ON_PAGE: "false"
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      - mongodb
+
+  mongodb:
+    image: mongo:7
+    container_name: muxi_photo_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: muxi_photo
+
+volumes:
+  mongo_data:

@@ -1,0 +1,21 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ '编辑活动' if activity else '创建活动' }} - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<h1>{{ '编辑活动' if activity else '创建活动' }}</h1>
+<form class="panel form-stack" method="post" enctype="multipart/form-data">
+  {{ csrf_field() }}
+  <label>标题<input name="title" value="{{ activity.title if activity else '' }}" required></label>
+  <label>活动介绍<textarea name="intro" rows="4">{{ activity.intro if activity else '' }}</textarea></label>
+  <label>征集要求<textarea name="requirements" rows="5">{{ activity.requirements if activity else '' }}</textarea></label>
+  <label>上传说明<textarea name="upload_instructions" rows="4">{{ activity.upload_instructions if activity else '' }}</textarea></label>
+  <div class="two-col"><label>开始时间<input name="start_time" value="{{ activity.start_time if activity else '' }}"></label><label>截止时间<input name="end_time" value="{{ activity.end_time if activity else '' }}"></label></div>
+  <label>状态<select name="status">{% for s in ['draft','active','closed','showcased'] %}<option value="{{ s }}" {% if activity and activity.status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
+  <label>封面图<input type="file" name="cover_image" accept="image/*"></label>
+  {% if activity and activity.cover_image %}<img class="preview-wide" src="{{ activity.cover_image }}" alt="封面">{% endif %}
+  <label>样本图片<input type="file" name="sample_images" accept="image/*" multiple></label>
+  {% if activity and activity.sample_images %}<div class="thumb-row">{% for image in activity.sample_images %}<img src="{{ image }}" alt="">{% endfor %}</div>{% endif %}
+  <label class="check"><input type="checkbox" name="allow_public_submissions_view" {% if activity and activity.allow_public_submissions_view %}checked{% endif %}> 允许公开浏览投稿</label>
+  <label class="check"><input type="checkbox" name="show_selected_works" {% if not activity or activity.show_selected_works %}checked{% endif %}> 展示入选作品</label>
+  <button class="btn primary" type="submit">保存活动</button>
+</form>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}登录 - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="auth-page" style="background-image: linear-gradient(90deg, rgba(255,255,255,.9), rgba(255,255,255,.52)), url('{{ site_settings.auth_background }}')">
+  <form class="auth-card" method="post">
+    {{ csrf_field() }}
+    <p class="eyebrow">Welcome back</p>
+    <h1>登录木樨映像</h1>
+    <label>用户名 / 昵称<input name="username" required></label>
+    <label>密码<input name="password" type="password" required></label>
+    <button class="btn primary" type="submit">登录</button>
+    <p class="muted">还没有账号？需要使用管理员发放的邀请码和真实姓名注册。</p>
+    <a href="{{ url_for('auth.register') }}">凭邀请码注册</a>
+  </form>
+</section>
+{% endblock %}

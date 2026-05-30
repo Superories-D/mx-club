@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}素材征集 - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="page-cover">
+  <img src="{{ site_settings.activity_cover }}" alt="素材征集封面">
+  <div>
+    <p class="eyebrow">Open Calls</p>
+    <h1>校园摄影素材征集</h1>
+    <p>为活动、社刊和校园记忆征集影像素材。</p>
+  </div>
+</section>
+<section class="section">
+  <form class="filter-bar" method="get">
+    <select name="status">
+      <option value="">全部状态</option>
+      <option value="active" {% if status=='active' %}selected{% endif %}>进行中</option>
+      <option value="closed" {% if status=='closed' %}selected{% endif %}>已关闭</option>
+      <option value="showcased" {% if status=='showcased' %}selected{% endif %}>展示中</option>
+    </select>
+    <button class="btn" type="submit">筛选</button>
+  </form>
+  <div class="card-grid">
+    {% for activity in activities %}
+      <a class="content-card" href="{{ url_for('activities.detail', activity_id=activity._id) }}">
+        <img src="{{ activity.cover_image or site_settings.activity_cover }}" alt="{{ activity.title }}">
+        <span class="badge">{{ activity.status }}</span>
+        <h3>{{ activity.title }}</h3>
+        <p>{{ activity.intro|truncate(80) }}</p>
+        <small>截止：{{ activity.end_time or '长期开放' }}</small>
+      </a>
+    {% else %}
+      <div class="empty-block"><img src="{{ site_settings.empty_illustration }}" alt=""><p>暂无征集活动。</p></div>
+    {% endfor %}
+  </div>
+  {% include "pagination.html" %}
+</section>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "admin/base.html" %}
+{% block title %}社区内容管理 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<h1>社区内容管理</h1>
+<form class="filter-bar" method="get">
+  <input name="q" value="{{ q }}" placeholder="搜索帖子">
+  <select name="status"><option value="">全部状态</option><option value="normal" {% if status=='normal' %}selected{% endif %}>normal</option><option value="hidden" {% if status=='hidden' %}selected{% endif %}>hidden</option><option value="deleted" {% if status=='deleted' %}selected{% endif %}>deleted</option></select>
+  <button class="btn" type="submit">搜索</button>
+</form>
+<div class="table-wrap"><table><thead><tr><th>图片</th><th>标题</th><th>作者</th><th>状态</th><th>互动</th><th>时间</th><th>操作</th></tr></thead><tbody>
+{% for post in posts %}
+  {% set author = users.get(post.author_id) %}
+  <tr>
+    <td>{% if post.images %}<img class="table-thumb" src="{{ post.images[0] }}" alt="">{% endif %}</td>
+    <td><a href="{{ url_for('community.detail', post_id=post._id) }}">{{ post.title }}</a></td>
+    <td>{{ author.username if author else '未知' }}</td>
+    <td>{{ post.status }}</td>
+    <td>{{ post.like_count }} 赞 / {{ post.comment_count }} 评</td>
+    <td>{{ post.created_at|datetime }}</td>
+    <td class="actions">
+      <form method="post" action="{{ url_for('admin.post_moderate', post_id=post._id) }}">{{ csrf_field() }}<input type="hidden" name="action" value="{{ 'restore' if post.status!='normal' else 'hide' }}"><button class="btn small" type="submit">{{ '恢复' if post.status!='normal' else '隐藏' }}</button></form>
+      <form method="post" action="{{ url_for('admin.post_moderate', post_id=post._id) }}" data-confirm="确认删除帖子？">{{ csrf_field() }}<input type="hidden" name="action" value="delete"><button class="btn small danger" type="submit">删除</button></form>
+    </td>
+  </tr>
+{% endfor %}
+</tbody></table></div>
+{% include "pagination.html" %}
+{% endblock %}

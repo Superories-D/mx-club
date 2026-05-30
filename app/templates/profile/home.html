@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ profile_user.username }} - {{ site_settings.site_name }}{% endblock %}
+{% block content %}
+<section class="profile-head">
+  <img src="{{ profile_user.avatar_url or site_settings.default_avatar }}" alt="{{ profile_user.username }}">
+  <div>
+    <p class="eyebrow">Member since {{ profile_user.created_at|date }}</p>
+    <h1>{{ profile_user.username }}</h1>
+    <p>{{ profile_user.bio or '这个成员还没有写简介。' }}</p>
+    <p class="muted">联系方式：{{ profile_user.contact if current_user and current_user.role in ['admin','super_admin'] else profile_user.contact|mask_contact }}</p>
+    <div class="stat-row">
+      <span>{{ posts|length }} 作品</span><span>{{ follower_count }} 粉丝</span><span>{{ following_count }} 关注</span><span>{{ like_total }} 获赞</span>
+    </div>
+    {% if current_user and current_user._id != profile_user._id %}
+      <form method="post" action="{{ url_for('profile.toggle_follow', user_id=profile_user._id) }}">{{ csrf_field() }}<button class="btn primary" type="submit">{{ '取消关注' if is_following else '关注' }}</button></form>
+    {% endif %}
+  </div>
+</section>
+<section class="section">
+  <h2>发布作品</h2>
+  <div class="card-grid">
+    {% for post in posts %}
+      <a class="content-card" href="{{ url_for('community.detail', post_id=post._id) }}">
+        <img src="{{ post.images[0] if post.images else site_settings.community_cover }}" alt="{{ post.title }}">
+        <h3>{{ post.title }}</h3>
+        <p>{{ post.like_count }} 赞 · {{ post.favorite_count }} 收藏</p>
+      </a>
+    {% else %}
+      <div class="empty-block"><img src="{{ site_settings.empty_illustration }}" alt=""><p>暂无作品。</p></div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
