@@ -8,10 +8,12 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/muxi-photo}"
 HTTP_PORT="${HTTP_PORT:-80}"
 SITE_NAME="${SITE_NAME:-泸州高中木樨映像}"
 MAX_UPLOAD_SIZE_MB="${MAX_UPLOAD_SIZE_MB:-10}"
+MAX_IMAGE_PIXELS="${MAX_IMAGE_PIXELS:-40000000}"
+MAX_FILES_PER_UPLOAD="${MAX_FILES_PER_UPLOAD:-12}"
+MAX_ZIP_DOWNLOAD_MB="${MAX_ZIP_DOWNLOAD_MB:-1024}"
 GUNICORN_WORKERS="${GUNICORN_WORKERS:-2}"
 SESSION_COOKIE_SECURE="${SESSION_COOKIE_SECURE:-false}"
 PROXY_FIX="${PROXY_FIX:-false}"
-EXPOSE_MONGODB="${EXPOSE_MONGODB:-false}"
 RUN_SMOKE_TEST="${RUN_SMOKE_TEST:-false}"
 NONINTERACTIVE="${NONINTERACTIVE:-false}"
 
@@ -42,14 +44,14 @@ usage() {
   --site-name NAME         网站名称
   --secure-cookie          启用 SESSION_COOKIE_SECURE=true，HTTPS 部署建议开启
   --proxy-fix              启用 Flask ProxyFix，反向代理后部署建议开启
-  --expose-mongodb         将 MongoDB 27017 暴露到宿主机，不建议公网部署开启
-  --run-smoke-test         部署后运行 scripts/smoke_test.py，需要宿主机 Python 依赖
+  --run-smoke-test         部署后在 Web 容器内运行 scripts/smoke_test.py
   --noninteractive         不询问确认，适合 CI 或云服务器初始化脚本
   -h, --help               查看帮助
 
 也可以通过环境变量覆盖：
   INSTALL_DIR, REPO_URL, BRANCH, HTTP_PORT, SITE_NAME, SECRET_KEY,
-  SESSION_COOKIE_SECURE, PROXY_FIX, EXPOSE_MONGODB, GUNICORN_WORKERS
+  MAX_UPLOAD_SIZE_MB, MAX_IMAGE_PIXELS, MAX_FILES_PER_UPLOAD, MAX_ZIP_DOWNLOAD_MB,
+  SESSION_COOKIE_SECURE, PROXY_FIX, GUNICORN_WORKERS
 
 示例：
   curl -fsSL https://raw.githubusercontent.com/Superories-D/mx-club/main/setup.sh | sudo bash
@@ -87,10 +89,6 @@ while [[ $# -gt 0 ]]; do
       PROXY_FIX="true"
       shift
       ;;
-    --expose-mongodb)
-      EXPOSE_MONGODB="true"
-      shift
-      ;;
     --run-smoke-test)
       RUN_SMOKE_TEST="true"
       shift
@@ -110,8 +108,24 @@ while [[ $# -gt 0 ]]; do
 done
 
 validate_options() {
-  [[ "$HTTP_PORT" =~ ^[0-9]+$ ]] || die "--port 必须是 1 到 65535 之间的整数。"
-  (( HTTP_PORT >= 1 && HTTP_PORT <= 65535 )) || die "--port 必须是 1 到 65535 之间的整数。"
+  validate_integer "HTTP_PORT" "$HTTP_PORT" 1 65535
+  validate_integer "MAX_UPLOAD_SIZE_MB" "$MAX_UPLOAD_SIZE_MB" 1 100
+  validate_integer "MAX_IMAGE_PIXELS" "$MAX_IMAGE_PIXELS" 1000000 200000000
+  validate_integer "MAX_FILES_PER_UPLOAD" "$MAX_FILES_PER_UPLOAD" 1 30
+  validate_integer "MAX_ZIP_DOWNLOAD_MB" "$MAX_ZIP_DOWNLOAD_MB" 10 10240
+  validate_integer "GUNICORN_WORKERS" "$GUNICORN_WORKERS" 1 32
+  [[ "$SESSION_COOKIE_SECURE" =~ ^(true|false)$ ]] || die "SESSION_COOKIE_SECURE 必须是 true 或 false。"
+  [[ "$PROXY_FIX" =~ ^(true|false)$ ]] || die "PROXY_FIX 必须是 true 或 false。"
+  [[ "$SITE_NAME" != *$'\n'* && "$SITE_NAME" != *$'\r'* ]] || die "SITE_NAME 不能包含换行。"
+}
+
+validate_integer() {
+  local name="$1"
+  local value="$2"
+  local minimum="$3"
+  local maximum="$4"
+  [[ "$value" =~ ^[0-9]+$ ]] || die "$name 必须是 $minimum 到 $maximum 之间的整数。"
+  (( 10#$value >= minimum && 10#$value <= maximum )) || die "$name 必须是 $minimum 到 $maximum 之间的整数。"
 }
 
 require_ubuntu() {
@@ -206,14 +220,23 @@ prepare_app_dir() {
 generate_secret_key() {
   if [[ -n "${SECRET_KEY:-}" ]]; then
     printf '%s' "$SECRET_KEY"
-  else
-    openssl rand -hex 32
+    return
   fi
+  if [[ -f "$INSTALL_DIR/.env" ]]; then
+    local existing_secret
+    existing_secret="$(sed -n 's/^SECRET_KEY=//p' "$INSTALL_DIR/.env" | head -n 1)"
+    if [[ -n "$existing_secret" ]]; then
+      printf '%s' "$existing_secret"
+      return
+    fi
+  fi
+  openssl rand -hex 32
 }
 
 write_env_file() {
   local secret_key
   secret_key="$(generate_secret_key)"
+  [[ "${#secret_key}" -ge 32 ]] || die "SECRET_KEY 至少需要 32 个字符。"
 
   log "写入生产 .env。"
   cat >"$INSTALL_DIR/.env" <<EOF
@@ -224,6 +247,9 @@ MONGO_URI=mongodb://mongodb:27017/muxi_photo?serverSelectionTimeoutMS=5000
 DATABASE_NAME=muxi_photo
 UPLOAD_FOLDER=uploads
 MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB}
+MAX_IMAGE_PIXELS=${MAX_IMAGE_PIXELS}
+MAX_FILES_PER_UPLOAD=${MAX_FILES_PER_UPLOAD}
+MAX_ZIP_DOWNLOAD_MB=${MAX_ZIP_DOWNLOAD_MB}
 SITE_NAME=${SITE_NAME}
 ADMIN_INIT_SHOW_ON_PAGE=false
 SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE}
@@ -235,24 +261,12 @@ EOF
 
 write_compose_override() {
   log "写入 docker-compose.override.yml。"
-  if [[ "$EXPOSE_MONGODB" == "true" ]]; then
-    cat >"$INSTALL_DIR/docker-compose.override.yml" <<EOF
-services:
-  web:
-    env_file:
-      - .env
-  mongodb:
-    ports:
-      - "27017:27017"
-EOF
-  else
-    cat >"$INSTALL_DIR/docker-compose.override.yml" <<EOF
+  cat >"$INSTALL_DIR/docker-compose.override.yml" <<EOF
 services:
   web:
     env_file:
       - .env
 EOF
-  fi
 }
 
 ensure_upload_dirs() {
@@ -262,6 +276,7 @@ ensure_upload_dirs() {
     "$INSTALL_DIR/uploads/activities" \
     "$INSTALL_DIR/uploads/submissions" \
     "$INSTALL_DIR/uploads/site_assets"
+  chown -R 10001:10001 "$INSTALL_DIR/uploads"
 }
 
 compose() {
@@ -293,11 +308,8 @@ maybe_run_smoke_test() {
   if [[ "$RUN_SMOKE_TEST" != "true" ]]; then
     return
   fi
-  log "运行宿主机 smoke test。"
-  python3 -m venv "$INSTALL_DIR/.smoke-venv"
-  "$INSTALL_DIR/.smoke-venv/bin/python" -m pip install --upgrade pip
-  "$INSTALL_DIR/.smoke-venv/bin/python" -m pip install -r "$INSTALL_DIR/requirements.txt"
-  (cd "$INSTALL_DIR" && "$INSTALL_DIR/.smoke-venv/bin/python" scripts/smoke_test.py)
+  log "在 Web 容器内运行 smoke test。"
+  compose exec -T -e TEST_MONGO_URI=mongodb://mongodb:27017 web python scripts/smoke_test.py
 }
 
 print_summary() {

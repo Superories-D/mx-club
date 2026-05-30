@@ -42,6 +42,7 @@ def initialize_admin(app):
             "status": "active",
             "cohort_tag": "",
             "quality_photographer": False,
+            "session_version": 0,
             "must_change_password": True,
             "created_at": now(),
             "updated_at": now(),

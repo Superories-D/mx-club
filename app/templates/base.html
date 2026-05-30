@@ -27,7 +27,7 @@
         {% if current_user.role in ['admin', 'super_admin'] %}
           <a href="{{ url_for('admin.dashboard') }}">后台</a>
         {% endif %}
-        <a href="{{ url_for('auth.logout') }}">退出</a>
+        <form class="nav-form" method="post" action="{{ url_for('auth.logout') }}">{{ csrf_field() }}<button type="submit">退出</button></form>
       {% else %}
         <a href="{{ url_for('auth.login') }}">登录</a>
         <a class="nav-cta" href="{{ url_for('auth.register') }}">凭邀请码加入</a>

@@ -23,8 +23,9 @@ def create_app(config_class=Config):
     if app.config.get("PROXY_FIX"):
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
     Path(app.config["UPLOAD_ROOT"]).mkdir(parents=True, exist_ok=True)
-    if not app.debug and app.config["SECRET_KEY"] in {"change-me", "change-me-in-production"}:
-        app.logger.warning("生产环境仍在使用默认 SECRET_KEY，请在部署前修改。")
+    secret_key = app.config.get("SECRET_KEY")
+    if not app.debug and not app.testing and (not isinstance(secret_key, str) or len(secret_key) < 32):
+        raise RuntimeError("生产环境 SECRET_KEY 至少需要 32 个字符，请先配置安全随机值。")
 
     mongo.init_app(app)
 
@@ -98,6 +99,9 @@ def register_hooks(app):
             except Exception:
                 session.clear()
                 return
+        if g.user and session.get("session_version", 0) != g.user.get("session_version", 0):
+            session.clear()
+            return redirect(url_for("auth.login"))
         if g.user and g.user.get("status") in ("banned", "deleted") and request.endpoint != "auth.logout":
             session.clear()
             return redirect(url_for("auth.login"))
@@ -118,8 +122,17 @@ def register_hooks(app):
             "Permissions-Policy",
             "camera=(), microphone=(), geolocation=(), payment=()",
         )
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data:; script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; "
+            "frame-ancestors 'self'; form-action 'self'",
+        )
+        if request.is_secure:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if not app.debug:
-            response.headers.setdefault("Cache-Control", "no-store" if request.path.startswith("/admin") else "private")
+            private_path = request.path.startswith(("/admin", "/login", "/register", "/profile", "/uploads/submissions"))
+            response.headers.setdefault("Cache-Control", "no-store" if private_path else "private")
         return response
 
 

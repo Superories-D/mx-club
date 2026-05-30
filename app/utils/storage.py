@@ -50,8 +50,6 @@ def mark_deletable_content(db, older_than_days=30):
     result = {"cutoff": cutoff, "older_than_days": older_than_days, "posts": 0, "submissions": 0}
     for collection_name, author_field in CONTENT_COLLECTIONS:
         query = _mark_query(author_field, protected, cutoff)
-        if collection_name == "posts":
-            query["status"] = {"$ne": "deleted"}
         update = {
             "$set": {
                 "storage_status": "deletable",

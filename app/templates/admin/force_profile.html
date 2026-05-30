@@ -9,7 +9,7 @@
     <label>真实姓名<input name="real_name" value="{{ current_user.real_name }}" required></label>
     <label>用户名 / 昵称<input name="username" value="{{ current_user.username }}" required></label>
     <label>初始密码<input name="old_password" type="password" required></label>
-    <label>新密码<input name="new_password" type="password" minlength="6" required></label>
+    <label>新密码<input name="new_password" type="password" minlength="8" maxlength="128" required></label>
     <button class="btn primary" type="submit">完成初始化</button>
   </form>
 </section>

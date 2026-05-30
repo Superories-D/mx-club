@@ -10,7 +10,7 @@ def create_indexes(db, logger=None):
         ("users", [("cohort_tag", ASCENDING)], {}),
         ("users", [("quality_photographer", ASCENDING)], {}),
         ("users", [("created_at", DESCENDING)], {}),
-        ("invite_codes", [("code", ASCENDING), ("real_name", ASCENDING)], {"unique": True}),
+        ("invite_codes", [("code", ASCENDING)], {"unique": True}),
         ("invite_codes", [("used", ASCENDING)], {}),
         ("invite_codes", [("used_by", ASCENDING)], {}),
         ("invite_codes", [("cohort_tag", ASCENDING)], {}),
@@ -46,13 +46,21 @@ def create_indexes(db, logger=None):
         ("system_locks", [("key", ASCENDING)], {"unique": True}),
         ("reports", [("target_type", ASCENDING), ("target_id", ASCENDING)], {}),
         ("reports", [("reporter_id", ASCENDING)], {}),
+        (
+            "reports",
+            [("reporter_id", ASCENDING), ("target_type", ASCENDING), ("target_id", ASCENDING), ("status", ASCENDING)],
+            {"unique": True, "partialFilterExpression": {"status": "pending"}},
+        ),
         ("reports", [("status", ASCENDING)], {}),
         ("reports", [("created_at", DESCENDING)], {}),
+        ("rate_limits", [("expires_at", ASCENDING)], {"expireAfterSeconds": 0}),
     ]
     for collection, keys, options in index_specs:
         try:
             db[collection].create_index(keys, **options)
         except PyMongoError as exc:
+            if options.get("unique"):
+                raise RuntimeError(f"创建关键唯一索引失败 {collection} {keys}: {exc}") from exc
             if logger:
                 logger.warning("创建索引失败 %s %s: %s", collection, keys, exc)
 

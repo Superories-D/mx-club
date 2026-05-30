@@ -13,9 +13,10 @@ from pymongo import MongoClient
 ROOT = Path(__file__).resolve().parent.parent
 DB_NAME = f"muxi_photo_smoke_{os.getpid()}"
 UPLOAD_DIR = ROOT / "tmp" / "smoke_uploads"
+MONGO_SERVER_URI = os.getenv("TEST_MONGO_URI", "mongodb://localhost:27017").rstrip("/")
 sys.path.insert(0, str(ROOT))
 
-os.environ["MONGO_URI"] = f"mongodb://localhost:27017/{DB_NAME}?serverSelectionTimeoutMS=3000"
+os.environ["MONGO_URI"] = f"{MONGO_SERVER_URI}/{DB_NAME}?serverSelectionTimeoutMS=3000"
 os.environ["UPLOAD_FOLDER"] = str(UPLOAD_DIR)
 os.environ["SITE_NAME"] = "泸州高中木樨映像"
 os.environ["TESTING"] = "true"
@@ -33,7 +34,7 @@ def image_file(name="test.png"):
 
 
 def main():
-    client_for_cleanup = MongoClient("mongodb://localhost:27017", serverSelectionTimeoutMS=3000)
+    client_for_cleanup = MongoClient(MONGO_SERVER_URI, serverSelectionTimeoutMS=3000)
     try:
         client_for_cleanup.admin.command("ping")
     except Exception as exc:
@@ -46,6 +47,10 @@ def main():
     def csrf_token():
         with client.session_transaction() as sess:
             return sess.get("_csrf_token")
+
+    def logout():
+        client.get("/")
+        return client.post("/logout", data={"_csrf_token": csrf_token()}, follow_redirects=True)
 
     def check(name, condition):
         results.append((name, bool(condition)))
@@ -127,7 +132,7 @@ def main():
             bulk_count = mongo.db.invite_codes.count_documents({"code": {"$regex": "^BULK"}})
         check("direct bulk generate invites", response.status_code == 200 and bulk_count == 2)
 
-        client.get("/logout")
+        logout()
         client.get("/register")
         response = client.post(
             "/register",
@@ -219,7 +224,7 @@ def main():
             activity = mongo.db.activities.find_one({"title": "调试征集"})
         check("activity persisted", activity is not None)
 
-        client.get("/logout")
+        logout()
         client.get("/login")
         client.post(
             "/login",
@@ -305,6 +310,18 @@ def main():
                     "updated_at": old_time,
                 }
             ).inserted_id
+            deleted_post_id = mongo.db.posts.insert_one(
+                {
+                    "author_id": ordinary_id,
+                    "title": "已删除普通旧帖",
+                    "description": "",
+                    "images": post.get("images", []),
+                    "status": "deleted",
+                    "storage_status": "active",
+                    "created_at": old_time,
+                    "updated_at": old_time,
+                }
+            ).inserted_id
             ordinary_submission_id = mongo.db.submissions.insert_one(
                 {
                     "activity_id": activity["_id"],
@@ -326,6 +343,7 @@ def main():
         )
         with app.app_context():
             ordinary_post = mongo.db.posts.find_one({"_id": ordinary_post_id})
+            deleted_post = mongo.db.posts.find_one({"_id": deleted_post_id})
             ordinary_submission = mongo.db.submissions.find_one({"_id": ordinary_submission_id})
             quality_post = mongo.db.posts.find_one({"_id": post["_id"]})
             quality_submission = mongo.db.submissions.find_one({"_id": submission["_id"]})
@@ -333,6 +351,7 @@ def main():
             "storage marks ordinary old content only",
             response.status_code == 200
             and ordinary_post.get("storage_status") == "deletable"
+            and deleted_post.get("storage_status") == "deletable"
             and ordinary_submission.get("storage_status") == "deletable"
             and quality_post.get("storage_status") != "deletable"
             and quality_submission.get("storage_status") != "deletable",
@@ -352,7 +371,7 @@ def main():
         with app.app_context():
             smoke_user = mongo.db.users.find_one({"_id": smoke_user["_id"]})
         check("batch restrict by cohort", response.status_code == 200 and smoke_user.get("status") == "restricted")
-        client.get("/logout")
+        logout()
         client.get("/login")
         client.post(
             "/login",
@@ -383,7 +402,7 @@ def main():
                     "last_login_at": None,
                 }
             ).inserted_id
-        client.get("/logout")
+        logout()
         client.get("/login")
         client.post(
             "/login",

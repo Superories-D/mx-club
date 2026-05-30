@@ -13,7 +13,7 @@ def log_action(action, target_type="", target_id="", detail=""):
             "target_type": target_type,
             "target_id": str(target_id or ""),
             "detail": detail,
-            "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "ip": request.remote_addr,
             "created_at": now(),
         }
     )

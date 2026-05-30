@@ -16,11 +16,16 @@ def env_bool(name, default=False):
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def env_int(name, default):
+def env_int(name, default, minimum=None, maximum=None):
     try:
-        return int(os.getenv(name, str(default)))
+        value = int(os.getenv(name, str(default)))
     except ValueError:
         return default
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
 
 
 class Config:
@@ -30,16 +35,19 @@ class Config:
     SITE_NAME = os.getenv("SITE_NAME", "泸州高中木樨映像")
     ADMIN_INIT_SHOW_ON_PAGE = env_bool("ADMIN_INIT_SHOW_ON_PAGE", False)
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
-    MAX_UPLOAD_SIZE_MB = env_int("MAX_UPLOAD_SIZE_MB", 10)
-    MAX_CONTENT_LENGTH = MAX_UPLOAD_SIZE_MB * 1024 * 1024 * 12
+    MAX_UPLOAD_SIZE_MB = env_int("MAX_UPLOAD_SIZE_MB", 10, minimum=1, maximum=100)
+    MAX_IMAGE_PIXELS = env_int("MAX_IMAGE_PIXELS", 40000000, minimum=1000000, maximum=200000000)
+    MAX_FILES_PER_UPLOAD = env_int("MAX_FILES_PER_UPLOAD", 12, minimum=1, maximum=30)
+    MAX_ZIP_DOWNLOAD_MB = env_int("MAX_ZIP_DOWNLOAD_MB", 1024, minimum=10, maximum=10240)
+    MAX_CONTENT_LENGTH = MAX_UPLOAD_SIZE_MB * 1024 * 1024 * max(MAX_FILES_PER_UPLOAD, 12)
     DEBUG = os.getenv("FLASK_ENV", "development") == "development"
     TESTING = env_bool("TESTING", False)
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
     SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", False)
-    PERMANENT_SESSION_LIFETIME_DAYS = env_int("PERMANENT_SESSION_LIFETIME_DAYS", 14)
+    PERMANENT_SESSION_LIFETIME_DAYS = env_int("PERMANENT_SESSION_LIFETIME_DAYS", 14, minimum=1, maximum=365)
     PROXY_FIX = env_bool("PROXY_FIX", False)
-    HEALTHCHECK_DATABASE_TIMEOUT_MS = env_int("HEALTHCHECK_DATABASE_TIMEOUT_MS", 1200)
+    HEALTHCHECK_DATABASE_TIMEOUT_MS = env_int("HEALTHCHECK_DATABASE_TIMEOUT_MS", 1200, minimum=100, maximum=10000)
 
     @classmethod
     def upload_root(cls) -> Path:

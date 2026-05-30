@@ -1,6 +1,6 @@
 import mimetypes
 import uuid
-from pathlib import Path
+import warnings
 
 from flask import current_app
 from PIL import Image, UnidentifiedImageError
@@ -10,6 +10,11 @@ from werkzeug.utils import secure_filename
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 ALLOWED_MIME_PREFIXES = {"image/jpeg", "image/png", "image/webp"}
 UPLOAD_CATEGORIES = {"avatars", "posts", "activities", "submissions", "site_assets"}
+FORMAT_EXTENSIONS = {
+    "JPEG": {"jpg", "jpeg"},
+    "PNG": {"png"},
+    "WEBP": {"webp"},
+}
 
 
 class UploadError(ValueError):
@@ -26,17 +31,26 @@ def allowed_extension(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def _validate_image(path, mimetype):
+def _validate_image(path, mimetype, extension):
     if mimetype not in ALLOWED_MIME_PREFIXES:
         guessed, _ = mimetypes.guess_type(path.name)
         if guessed not in ALLOWED_MIME_PREFIXES:
             raise UploadError("文件 MIME 类型不支持。")
     try:
-        with Image.open(path) as img:
-            if (img.format or "").upper() not in {"JPEG", "PNG", "WEBP"}:
-                raise UploadError("图片格式不支持。")
-            img.verify()
-    except (UnidentifiedImageError, OSError):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(path) as img:
+                image_format = (img.format or "").upper()
+                if image_format not in FORMAT_EXTENSIONS:
+                    raise UploadError("图片格式不支持。")
+                if extension not in FORMAT_EXTENSIONS[image_format]:
+                    raise UploadError("文件扩展名与真实图片格式不一致。")
+                if img.width * img.height > current_app.config["MAX_IMAGE_PIXELS"]:
+                    raise UploadError("图片像素过高，请压缩后再上传。")
+                img.verify()
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise UploadError("图片像素过高，请压缩后再上传。")
+    except (UnidentifiedImageError, OSError, ValueError):
         raise UploadError("上传文件不是有效图片。")
 
 
@@ -48,8 +62,7 @@ def save_upload(file_storage, category):
     if not allowed_extension(file_storage.filename):
         raise UploadError("文件格式不支持，仅允许 jpg、jpeg、png、webp。")
 
-    original = secure_filename(file_storage.filename)
-    ext = original.rsplit(".", 1)[1].lower()
+    ext = file_storage.filename.rsplit(".", 1)[1].lower()
     filename = f"{uuid.uuid4().hex}.{ext}"
     target_dir = current_app.config["UPLOAD_ROOT"] / category
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -65,7 +78,7 @@ def save_upload(file_storage, category):
 
     file_storage.save(path)
     try:
-        _validate_image(path, file_storage.mimetype)
+        _validate_image(path, file_storage.mimetype, ext)
     except UploadError:
         path.unlink(missing_ok=True)
         raise
@@ -73,13 +86,31 @@ def save_upload(file_storage, category):
 
 
 def save_many(files, category, required=False):
+    candidates = [file_storage for file_storage in files if file_storage and file_storage.filename]
+    if len(candidates) > current_app.config["MAX_FILES_PER_UPLOAD"]:
+        raise UploadError(f"单次最多上传 {current_app.config['MAX_FILES_PER_UPLOAD']} 张图片。")
     saved = []
-    for file_storage in files:
-        if file_storage and file_storage.filename:
+    try:
+        for file_storage in candidates:
             saved.append(save_upload(file_storage, category))
+    except UploadError:
+        for url in saved:
+            delete_upload_url(url)
+        raise
     if required and not saved:
         raise UploadError("请至少上传一张图片。")
     return saved
+
+
+def delete_upload_url(url):
+    parts = str(url or "").strip("/").split("/")
+    if len(parts) != 3 or parts[0] != "uploads":
+        return False
+    path = safe_upload_path(parts[1], parts[2])
+    if not path:
+        return False
+    path.unlink(missing_ok=True)
+    return True
 
 
 def safe_upload_path(category, filename):

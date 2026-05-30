@@ -8,8 +8,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
-RUN mkdir -p uploads/avatars uploads/posts uploads/activities uploads/submissions uploads/site_assets
+RUN addgroup --system --gid 10001 app && adduser --system --uid 10001 --ingroup app app
+COPY --chown=app:app . .
+RUN mkdir -p uploads/avatars uploads/posts uploads/activities uploads/submissions uploads/site_assets \
+    && chown -R app:app /app
+
+USER app
 
 EXPOSE 5000
 

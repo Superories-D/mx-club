@@ -12,9 +12,9 @@
 <section class="section detail-grid">
   <article class="panel prose">
     <h2>征集要求</h2>
-    <p>{{ activity.requirements|replace('\n','<br>')|safe }}</p>
+    <p class="pre-line">{{ activity.requirements }}</p>
     <h2>上传说明</h2>
-    <p>{{ activity.upload_instructions|replace('\n','<br>')|safe }}</p>
+    <p class="pre-line">{{ activity.upload_instructions }}</p>
     {% if activity.sample_images %}
       <h2>样本图片</h2>
       <div class="thumb-row">{% for image in activity.sample_images %}<img src="{{ image }}" alt="样本图片">{% endfor %}</div>

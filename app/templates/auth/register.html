@@ -6,11 +6,11 @@
     {{ csrf_field() }}
     <p class="eyebrow">Invitation only</p>
     <h1>加入木樨映像</h1>
-    <label>邀请码<input name="invite_code" required></label>
-    <label>真实姓名<input name="real_name" required></label>
-    <label>昵称 / 用户名<input name="username" required></label>
-    <label>联系方式<input name="contact" required></label>
-    <label>登录密码<input name="password" type="password" minlength="6" required></label>
+    <label>邀请码<input name="invite_code" maxlength="80" required></label>
+    <label>真实姓名<input name="real_name" maxlength="80" required></label>
+    <label>昵称 / 用户名<input name="username" minlength="2" maxlength="40" required></label>
+    <label>联系方式<input name="contact" maxlength="120" required></label>
+    <label>登录密码<input name="password" type="password" minlength="8" maxlength="128" required></label>
     <button class="btn primary" type="submit">注册</button>
     <p class="muted">邀请码必须与后台注册表中的真实姓名完全匹配，默认只能使用一次。</p>
   </form>

@@ -1,10 +1,11 @@
 import secrets
 from datetime import datetime
+from urllib.parse import unquote, urlsplit
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from flask import abort, current_app, request, session
-from markupsafe import Markup
+from markupsafe import Markup, escape
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -17,7 +18,10 @@ def hash_password(password):
 
 
 def verify_password(password_hash, password):
-    return check_password_hash(password_hash, password)
+    try:
+        return check_password_hash(password_hash, password)
+    except (TypeError, ValueError):
+        return False
 
 
 def to_object_id(value):
@@ -39,13 +43,17 @@ def validate_csrf():
     if request.method != "POST":
         return
     session_token = session.get("_csrf_token")
-    form_token = request.form.get("_csrf_token") or request.headers.get("X-CSRF-Token")
-    if not session_token or not form_token or not secrets.compare_digest(session_token, form_token):
+    if not session_token:
+        abort(400, description="CSRF 校验失败，请刷新页面后重试。")
+    form_token = request.headers.get("X-CSRF-Token") or request.form.get("_csrf_token")
+    if not form_token or not secrets.compare_digest(session_token, form_token):
         abort(400, description="CSRF 校验失败，请刷新页面后重试。")
 
 
 def csrf_field():
-    return Markup(f'<input type="hidden" name="_csrf_token" value="{get_csrf_token()}">')
+    static_field = '<input type="hidden" name="_csrf_token" value="{}">'
+    # The HTML skeleton is static, and the only inserted value is explicitly escaped.
+    return Markup(static_field).format(escape(get_csrf_token()))  # nosec B704
 
 
 def mask_contact(contact):
@@ -66,11 +74,35 @@ def mask_contact(contact):
 def can_manage_user(actor, target):
     if not actor or not target:
         return False
+    if target.get("role") == "super_admin":
+        return False
     if actor.get("role") == "super_admin":
         return True
-    if actor.get("role") == "admin" and target.get("role") != "super_admin":
+    if actor.get("role") == "admin" and target.get("role") == "user":
         return True
     return False
+
+
+def safe_redirect_url(candidate, fallback):
+    if not candidate:
+        return fallback
+    target = urlsplit(str(candidate))
+    if target.scheme or target.netloc:
+        current = urlsplit(request.host_url)
+        if target.scheme not in {"http", "https"} or target.netloc != current.netloc:
+            return fallback
+    decoded_path = target.path
+    for _ in range(2):
+        decoded_path = unquote(decoded_path)
+    if not decoded_path.startswith("/") or decoded_path.startswith("//") or "\\" in decoded_path:
+        return fallback
+    return target.path + (f"?{target.query}" if target.query else "")
+
+
+def set_login_session(user):
+    session.clear()
+    session["user_id"] = str(user["_id"])
+    session["session_version"] = user.get("session_version", 0)
 
 
 def parse_int(value, default=1, minimum=1, maximum=1000):
@@ -87,6 +119,7 @@ def public_asset(path, fallback):
 
 def get_site_settings():
     from app.extensions import mongo
+    from app.utils.validation import clean_theme_color
 
     defaults = {
         "site_name": current_app.config["SITE_NAME"],
@@ -104,4 +137,5 @@ def get_site_settings():
     }
     doc = mongo.db.site_settings.find_one({"key": "default"}) or {}
     defaults.update({k: v for k, v in doc.items() if k != "_id"})
+    defaults["theme_color"] = clean_theme_color(defaults.get("theme_color"))
     return defaults

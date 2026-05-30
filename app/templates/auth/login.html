@@ -6,8 +6,8 @@
     {{ csrf_field() }}
     <p class="eyebrow">Welcome back</p>
     <h1>登录木樨映像</h1>
-    <label>用户名 / 昵称<input name="username" required></label>
-    <label>密码<input name="password" type="password" required></label>
+    <label>用户名 / 昵称<input name="username" maxlength="80" required></label>
+    <label>密码<input name="password" type="password" maxlength="128" required></label>
     <button class="btn primary" type="submit">登录</button>
     <p class="muted">还没有账号？需要使用管理员发放的邀请码和真实姓名注册。</p>
     <a href="{{ url_for('auth.register') }}">凭邀请码注册</a>

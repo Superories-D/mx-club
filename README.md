@@ -68,6 +68,12 @@ python run.py
 
 ## Docker 运行
 
+首次运行前复制环境变量文件，并把 `SECRET_KEY` 改成至少 32 个字符的随机值：
+
+```powershell
+Copy-Item .env.example .env
+```
+
 ```powershell
 docker compose up -d --build
 ```
@@ -90,7 +96,7 @@ Docker 镜像内使用 Gunicorn 启动 Flask 应用，并提供 `/healthz` 与 `
 
 ## Ubuntu 一键部署
 
-项目提供 `setup.sh`，面向 Ubuntu 20.04 / 22.04 / 24.04 服务器。脚本会安装基础依赖、Docker Engine、Docker Compose 插件，拉取 `Superories-D/mx-club` 仓库，生成 `.env`，创建 `docker-compose.override.yml`，启动服务并等待 `/readyz` 就绪。Ubuntu 一键部署默认直接监听宿主机 `80` 端口，完成后可访问 `http://服务器IP`。
+项目提供 `setup.sh`，面向 Ubuntu 20.04 / 22.04 / 24.04 服务器。脚本会安装基础依赖、Docker Engine、Docker Compose 插件，拉取 `Superories-D/mx-club` 仓库，生成 `.env`，创建 `docker-compose.override.yml`，启动服务并等待 `/readyz` 就绪。Ubuntu 一键部署默认直接监听宿主机 `80` 端口，完成后可访问 `http://服务器IP`。重复运行脚本更新服务时会复用已有 `SECRET_KEY`，不会无故让全部登录会话失效。
 
 最简部署：
 
@@ -98,7 +104,7 @@ Docker 镜像内使用 Gunicorn 启动 Flask 应用，并提供 `/healthz` 与 `
 curl -fsSL https://raw.githubusercontent.com/Superories-D/mx-club/main/setup.sh | sudo bash
 ```
 
-常用生产部署参数：
+已配置 HTTPS 反向代理后的部署参数：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Superories-D/mx-club/main/setup.sh | sudo bash -s -- \
@@ -107,6 +113,8 @@ curl -fsSL https://raw.githubusercontent.com/Superories-D/mx-club/main/setup.sh 
   --proxy-fix \
   --noninteractive
 ```
+
+默认一键部署会直接监听宿主机 `80` 端口并提供 HTTP 服务。只有在 Nginx、Caddy、Traefik 等反向代理已经负责 HTTPS 终止时，才应添加 `--secure-cookie --proxy-fix`。直接使用 HTTP 测试时不要开启 `--secure-cookie`，否则浏览器不会发送登录 Cookie。
 
 脚本支持通过环境变量覆盖配置，例如：
 
@@ -121,19 +129,24 @@ cd /opt/muxi-photo
 docker compose -f docker-compose.yml -f docker-compose.override.yml logs web | grep 'super_admin'
 ```
 
-公网部署默认只暴露 Web 的 `80` 端口，不会把 MongoDB 映射到宿主机。只有显式传入 `--expose-mongodb` 才会额外暴露 `27017`。如需改用其他 Web 端口，可传入 `--port 8080` 或设置 `HTTP_PORT=8080`。
+公网部署默认只暴露 Web 的 `80` 端口，不会把 MongoDB 映射到宿主机。数据库只允许 Docker 内部网络访问。如需改用其他 Web 端口，可传入 `--port 8080` 或设置 `HTTP_PORT=8080`。
+
+需要在部署后立即执行完整冒烟测试时，可加 `--run-smoke-test`。测试会在 Web 容器内连接 Docker 内部 MongoDB，使用临时数据库并在结束后自动清理。
 
 ## 环境变量
 
 | 变量 | 说明 |
 | --- | --- |
 | `FLASK_ENV` | `development` 或生产环境值 |
-| `SECRET_KEY` | Flask Session 密钥，生产环境必须修改 |
+| `SECRET_KEY` | Flask Session 密钥，生产环境必须设置为至少 32 个字符的随机值 |
 | `HTTP_PORT` | Docker 映射到宿主机的 Web 端口；本地默认 `5000`，Ubuntu 一键部署默认 `80` |
 | `MONGO_URI` | MongoDB 连接地址 |
 | `DATABASE_NAME` | 数据库名称 |
 | `UPLOAD_FOLDER` | 上传目录，默认 `uploads` |
 | `MAX_UPLOAD_SIZE_MB` | 单文件上传大小限制，默认 10MB |
+| `MAX_IMAGE_PIXELS` | 单张图片像素总量限制，默认 4000 万像素 |
+| `MAX_FILES_PER_UPLOAD` | 单次上传和单篇作品最多图片数，默认 12 张 |
+| `MAX_ZIP_DOWNLOAD_MB` | 后台投稿 ZIP 下载的原始文件总量限制，默认 1024MB |
 | `SITE_NAME` | 默认网站名称 |
 | `ADMIN_INIT_SHOW_ON_PAGE` | 保留配置，当前默认通过日志查看初始管理员 |
 | `SESSION_COOKIE_SECURE` | HTTPS 部署时建议设为 `true` |
@@ -144,11 +157,12 @@ docker compose -f docker-compose.yml -f docker-compose.override.yml logs web | g
 
 上线前请至少完成：
 
-- 修改 `SECRET_KEY`，不要使用示例值。
+- 把 `SECRET_KEY` 设置为至少 32 个字符的随机值，不要使用示例值。
 - 若站点通过 HTTPS 访问，设置 `SESSION_COOKIE_SECURE=true`。
 - 若前面有 Nginx、Caddy、Traefik 等反向代理，设置 `PROXY_FIX=true`，并让代理转发 `X-Forwarded-*` 请求头。
 - 为 `uploads/` 和 MongoDB 数据卷准备持久化备份。
-- 不要公开暴露 MongoDB 端口；公网部署时可移除 `mongodb` 的 `ports` 映射，仅保留 Docker 内部网络访问。
+- 不要公开暴露 MongoDB 端口；默认 Compose 配置不映射 MongoDB 到宿主机，仅允许 Docker 内部网络访问。
+- Web 容器使用非 root 用户运行。手动在 Linux 上执行 `docker compose up` 前，请确保 `uploads/` 对 UID `10001` 可写；`setup.sh` 会自动处理权限。
 - 使用 `docker compose logs web` 保存首次生成的 super_admin 初始密码，首次登录后立即修改。
 
 ## 健康检查
@@ -164,7 +178,7 @@ Invoke-WebRequest http://localhost:5000/readyz -UseBasicParsing
 
 ## MongoDB 配置
 
-应用启动时会自动创建集合索引，包括用户唯一用户名、邀请码复合唯一索引、点赞/收藏/关注唯一索引，以及帖子、评论、活动、投稿、审计日志常用查询索引。
+应用启动时会自动创建集合索引，包括用户唯一用户名、邀请码唯一索引、点赞/收藏/关注唯一索引，以及帖子、评论、活动、投稿、审计日志常用查询索引。关键唯一索引创建失败时应用会拒绝启动，避免在数据冲突状态下继续服务。
 
 主要集合：
 
@@ -246,8 +260,11 @@ uploads/
 
 - 仅允许 `jpg`、`jpeg`、`png`、`webp`
 - 单文件默认最大 10MB
+- 单张图片默认最多 4000 万像素
+- 单次上传和单篇作品默认最多 12 张图片
 - 使用 UUID 重命名
 - 使用 Pillow 校验真实图片
+- 校验扩展名与真实图片格式一致
 - 通过 `/uploads/<category>/<filename>` 安全访问
 
 ## 默认视觉素材
@@ -268,6 +285,12 @@ app/static/images/generated/
 python scripts/smoke_test.py
 ```
 
+项目还提供安全回归测试，覆盖 CSRF、开放重定向、上传伪装、像素限制、私有图片授权、管理员越权、会话失效、XSS、CSV 公式注入、限流和审计日志来源等场景：
+
+```powershell
+python scripts/security_test.py
+```
+
 覆盖内容包括：
 
 - 首页、登录、注册、社区、活动、后台主要页面渲染
@@ -286,6 +309,7 @@ python scripts/smoke_test.py
 - 注册失败：确认邀请码和真实姓名与后台注册表完全一致，且邀请码未使用。
 - 上传失败：确认文件是真实图片，格式为 jpg/jpeg/png/webp，且没有超过大小限制。
 - 后台无权限：只有 `admin` 和 `super_admin` 可以访问 `/admin`。
+- 升级后提示“创建关键唯一索引失败”：先在 MongoDB 中检查并处理重复邀请码或重复待处理举报，再重新启动服务。应用会主动拒绝在冲突数据上继续运行。
 
 ## 后续可扩展方向
 
