@@ -5,7 +5,7 @@ APP_NAME="muxi-photo"
 REPO_URL="${REPO_URL:-https://github.com/Superories-D/mx-club.git}"
 BRANCH="${BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/muxi-photo}"
-HTTP_PORT="${HTTP_PORT:-5000}"
+HTTP_PORT="${HTTP_PORT:-80}"
 SITE_NAME="${SITE_NAME:-泸州高中木樨映像}"
 MAX_UPLOAD_SIZE_MB="${MAX_UPLOAD_SIZE_MB:-10}"
 GUNICORN_WORKERS="${GUNICORN_WORKERS:-2}"
@@ -38,7 +38,7 @@ usage() {
   --install-dir PATH       部署目录，默认 /opt/muxi-photo
   --repo-url URL           Git 仓库地址，默认 https://github.com/Superories-D/mx-club.git
   --branch NAME            分支名，默认 main
-  --port PORT              Web 端口，默认 5000
+  --port PORT              Web 端口，默认 80
   --site-name NAME         网站名称
   --secure-cookie          启用 SESSION_COOKIE_SECURE=true，HTTPS 部署建议开启
   --proxy-fix              启用 Flask ProxyFix，反向代理后部署建议开启
@@ -53,7 +53,7 @@ usage() {
 
 示例：
   curl -fsSL https://raw.githubusercontent.com/Superories-D/mx-club/main/setup.sh | sudo bash
-  sudo bash setup.sh --secure-cookie --proxy-fix --port 8080
+  sudo bash setup.sh --secure-cookie --proxy-fix
 '
 }
 
@@ -108,6 +108,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+validate_options() {
+  [[ "$HTTP_PORT" =~ ^[0-9]+$ ]] || die "--port 必须是 1 到 65535 之间的整数。"
+  (( HTTP_PORT >= 1 && HTTP_PORT <= 65535 )) || die "--port 必须是 1 到 65535 之间的整数。"
+}
 
 require_ubuntu() {
   [[ -r /etc/os-release ]] || die "无法识别系统：缺少 /etc/os-release。"
@@ -214,6 +219,7 @@ write_env_file() {
   cat >"$INSTALL_DIR/.env" <<EOF
 FLASK_ENV=production
 SECRET_KEY=${secret_key}
+HTTP_PORT=${HTTP_PORT}
 MONGO_URI=mongodb://mongodb:27017/muxi_photo?serverSelectionTimeoutMS=5000
 DATABASE_NAME=muxi_photo
 UPLOAD_FOLDER=uploads
@@ -235,8 +241,6 @@ services:
   web:
     env_file:
       - .env
-    ports:
-      - "${HTTP_PORT}:5000"
   mongodb:
     ports:
       - "27017:27017"
@@ -247,10 +251,6 @@ services:
   web:
     env_file:
       - .env
-    ports:
-      - "${HTTP_PORT}:5000"
-  mongodb:
-    ports: []
 EOF
   fi
 }
@@ -301,16 +301,20 @@ maybe_run_smoke_test() {
 }
 
 print_summary() {
+  local port_suffix=""
+  if [[ "$HTTP_PORT" != "80" ]]; then
+    port_suffix=":${HTTP_PORT}"
+  fi
   cat <<EOF
 
 部署完成。
 
 访问地址：
-  http://SERVER_IP:${HTTP_PORT}
-  http://127.0.0.1:${HTTP_PORT}
+  http://SERVER_IP${port_suffix}
+  http://127.0.0.1${port_suffix}
 
 后台入口：
-  http://SERVER_IP:${HTTP_PORT}/admin
+  http://SERVER_IP${port_suffix}/admin
 
 查看初始 super_admin：
   cd ${INSTALL_DIR}
@@ -330,6 +334,7 @@ EOF
 }
 
 main() {
+  validate_options
   require_ubuntu
   require_root
   confirm_deploy

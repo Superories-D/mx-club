@@ -90,7 +90,7 @@ Docker 镜像内使用 Gunicorn 启动 Flask 应用，并提供 `/healthz` 与 `
 
 ## Ubuntu 一键部署
 
-项目提供 `setup.sh`，面向 Ubuntu 20.04 / 22.04 / 24.04 服务器。脚本会安装基础依赖、Docker Engine、Docker Compose 插件，拉取 `Superories-D/mx-club` 仓库，生成 `.env`，创建 `docker-compose.override.yml`，启动服务并等待 `/readyz` 就绪。
+项目提供 `setup.sh`，面向 Ubuntu 20.04 / 22.04 / 24.04 服务器。脚本会安装基础依赖、Docker Engine、Docker Compose 插件，拉取 `Superories-D/mx-club` 仓库，生成 `.env`，创建 `docker-compose.override.yml`，启动服务并等待 `/readyz` 就绪。Ubuntu 一键部署默认直接监听宿主机 `80` 端口，完成后可访问 `http://服务器IP`。
 
 最简部署：
 
@@ -103,7 +103,6 @@ curl -fsSL https://raw.githubusercontent.com/Superories-D/mx-club/main/setup.sh 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Superories-D/mx-club/main/setup.sh | sudo bash -s -- \
   --install-dir /opt/muxi-photo \
-  --port 5000 \
   --secure-cookie \
   --proxy-fix \
   --noninteractive
@@ -122,7 +121,7 @@ cd /opt/muxi-photo
 docker compose -f docker-compose.yml -f docker-compose.override.yml logs web | grep 'super_admin'
 ```
 
-公网部署建议不要暴露 MongoDB 端口。`setup.sh` 默认会在 override 文件中取消 MongoDB 宿主机端口映射；只有显式传入 `--expose-mongodb` 才会暴露 `27017`。
+公网部署默认只暴露 Web 的 `80` 端口，不会把 MongoDB 映射到宿主机。只有显式传入 `--expose-mongodb` 才会额外暴露 `27017`。如需改用其他 Web 端口，可传入 `--port 8080` 或设置 `HTTP_PORT=8080`。
 
 ## 环境变量
 
@@ -130,6 +129,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.yml logs web | g
 | --- | --- |
 | `FLASK_ENV` | `development` 或生产环境值 |
 | `SECRET_KEY` | Flask Session 密钥，生产环境必须修改 |
+| `HTTP_PORT` | Docker 映射到宿主机的 Web 端口；本地默认 `5000`，Ubuntu 一键部署默认 `80` |
 | `MONGO_URI` | MongoDB 连接地址 |
 | `DATABASE_NAME` | 数据库名称 |
 | `UPLOAD_FOLDER` | 上传目录，默认 `uploads` |
