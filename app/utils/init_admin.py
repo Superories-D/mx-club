@@ -40,6 +40,8 @@ def initialize_admin(app):
             "role": "super_admin",
             "permissions": PERMISSION_KEYS,
             "status": "active",
+            "cohort_tag": "",
+            "quality_photographer": False,
             "must_change_password": True,
             "created_at": now(),
             "updated_at": now(),

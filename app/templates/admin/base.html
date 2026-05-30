@@ -11,6 +11,7 @@
     {% if can(current_user, 'moderate_community') %}<a href="{{ url_for('admin.reports') }}">举报管理</a>{% endif %}
     {% if can(current_user, 'manage_activities') %}<a href="{{ url_for('admin.admin_activities') }}">活动管理</a>{% endif %}
     {% if can(current_user, 'review_submissions') %}<a href="{{ url_for('admin.submissions') }}">投稿审核</a>{% endif %}
+    {% if can(current_user, 'manage_storage') %}<a href="{{ url_for('admin.storage') }}">存储治理</a>{% endif %}
     {% if can(current_user, 'manage_settings') %}<a href="{{ url_for('admin.settings') }}">网站设置</a>{% endif %}
     {% if can(current_user, 'view_audit_logs') %}<a href="{{ url_for('admin.audit_logs') }}">审计日志</a>{% endif %}
   </aside>

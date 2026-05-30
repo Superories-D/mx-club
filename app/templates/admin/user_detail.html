@@ -6,6 +6,8 @@
   <p>真实姓名：{{ target.real_name }}</p>
   <p>完整联系方式：{{ target.contact }}</p>
   <p>角色：{{ target.role }} · 状态：{{ target.status }}</p>
+  <p>用户标签/届别：{{ target.cohort_tag or '-' }} · 摄影等级：{{ '优质摄影' if target.quality_photographer else '普通用户' }}</p>
+  {% if target.restricted_reason %}<p>暂停原因：{{ target.restricted_reason }}</p>{% endif %}
   <p>创建时间：{{ target.created_at|datetime }} · 最近登录：{{ target.last_login_at|datetime }}</p>
 </div>
 <div class="admin-columns">

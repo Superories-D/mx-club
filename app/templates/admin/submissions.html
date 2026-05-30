@@ -22,7 +22,7 @@
     <label class="check"><input class="submission-select" type="checkbox" name="submission_ids" value="{{ sub._id }}" form="batch-review-form"> 选择</label>
     <div class="submission-images">{% for image in sub.images %}<a href="{{ image }}" target="_blank"><img src="{{ image }}" alt="投稿图片"></a>{% endfor %}</div>
     <div>
-      <h3>{{ activity.title if activity else '未知活动' }} · <span class="badge">{{ sub.status }}</span></h3>
+      <h3>{{ activity.title if activity else '未知活动' }} · <span class="badge">{{ sub.status }}</span> <span class="badge">{{ sub.storage_status or 'active' }}</span></h3>
       <p>投稿人：{{ user.username if user else '未知用户' }} / 联系方式：{{ sub.contact }}</p>
       <p>{{ sub.description }}</p>
       <p class="muted">{{ sub.location }} {{ sub.shoot_time }} · {{ sub.created_at|datetime }}</p>

@@ -84,6 +84,10 @@ def new_post():
                 "favorite_count": 0,
                 "comment_count": 0,
                 "status": "normal",
+                "storage_status": "active",
+                "storage_marked_at": None,
+                "storage_reason": "",
+                "deleted_files": [],
                 "created_at": now(),
                 "updated_at": now(),
             }

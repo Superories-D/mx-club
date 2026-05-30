@@ -45,6 +45,10 @@ def register():
             "role": "user",
             "permissions": [],
             "status": "active",
+            "cohort_tag": invite.get("cohort_tag", ""),
+            "invite_code": invite.get("code", ""),
+            "quality_photographer": False,
+            "restricted_reason": "",
             "must_change_password": False,
             "created_at": now(),
             "updated_at": now(),
@@ -58,7 +62,7 @@ def register():
 
         mongo.db.invite_codes.update_one(
             {"_id": invite["_id"]},
-            {"$set": {"used": True, "used_by": result.inserted_id, "used_at": now()}},
+            {"$set": {"used": True, "used_by": result.inserted_id, "used_at": now(), "updated_at": now()}},
         )
         flash("注册成功，请登录。", "success")
         return redirect(url_for("auth.login"))

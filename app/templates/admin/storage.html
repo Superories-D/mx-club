@@ -1,0 +1,46 @@
+{% extends "admin/base.html" %}
+{% block title %}存储治理 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<h1>存储治理</h1>
+<p class="muted">优质摄影用户的帖子和投稿不会被自动标记为可删除；普通用户内容超过设定天数后可进入清理池。真正删除图片时，系统会按内容创建时间从早到晚清理。</p>
+<div class="stat-grid">
+  <div><strong>{{ summary.upload_mb }}</strong><span>上传目录 MB</span></div>
+  <div><strong>{{ summary.free_mb }}</strong><span>磁盘可用 MB</span></div>
+  <div><strong>{{ summary.candidate_files }}</strong><span>可清理文件</span></div>
+  <div><strong>{{ summary.candidate_mb }}</strong><span>可清理 MB</span></div>
+</div>
+<div class="admin-columns">
+  <section class="panel form-stack">
+    <h2>标记可删除内容</h2>
+    <p class="muted">默认标记 30 天前、且作者不是优质摄影用户的帖子与投稿。这里只标记，不删除文件。</p>
+    <form class="form-stack" method="post" action="{{ url_for('admin.storage') }}">
+      {{ csrf_field() }}
+      <input type="hidden" name="action" value="mark">
+      <label>超过多少天
+        <input type="number" name="older_than_days" value="30" min="1" max="3650" required>
+      </label>
+      <button class="btn primary" type="submit">标记可删除</button>
+    </form>
+  </section>
+  <section class="panel form-stack">
+    <h2>磁盘不足时清理</h2>
+    <p class="muted">当当前可用空间低于目标值时，才会从可删除池中按时间从早到晚删除图片。</p>
+    <form class="form-stack" method="post" action="{{ url_for('admin.storage') }}" data-confirm="确认清理已标记为可删除的图片？此操作会删除本地文件。">
+      {{ csrf_field() }}
+      <input type="hidden" name="action" value="cleanup">
+      <label>目标可用空间 MB
+        <input type="number" name="target_free_mb" value="1024" min="1" max="1048576" required>
+      </label>
+      <button class="btn danger" type="submit">按时间清理</button>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>当前状态</h2>
+    <p>可删除帖子：{{ summary.deletable_posts }}</p>
+    <p>可删除投稿：{{ summary.deletable_submissions }}</p>
+    <p>已清理帖子：{{ summary.cleaned_posts }}</p>
+    <p>已清理投稿：{{ summary.cleaned_submissions }}</p>
+    <p class="muted">磁盘总量：{{ summary.total_mb }}MB，已用：{{ summary.used_mb }}MB。</p>
+  </section>
+</div>
+{% endblock %}

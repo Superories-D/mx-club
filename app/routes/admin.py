@@ -16,6 +16,7 @@ from app.utils.audit import log_action
 from app.utils.files import UploadError, safe_upload_path, save_many, save_upload
 from app.utils.permissions import PERMISSIONS, PERMISSION_KEYS, normalize_permissions
 from app.utils.security import can_manage_user, hash_password, now, parse_int, to_object_id, verify_password
+from app.utils.storage import cleanup_deletable_files, mark_deletable_content, storage_summary
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -121,15 +122,36 @@ def users():
     query = {}
     if q:
         rgx = _regex(q)
-        query["$or"] = [{"username": rgx}, {"real_name": rgx}, {"contact": rgx}]
+        query["$or"] = [{"username": rgx}, {"real_name": rgx}, {"contact": rgx}, {"cohort_tag": rgx}]
     role = request.args.get("role", "")
     status = request.args.get("status", "")
+    cohort_tag = request.args.get("cohort_tag", "").strip()
+    quality = request.args.get("quality", "")
     if role in {"user", "admin", "super_admin"}:
         query["role"] = role
-    if status in {"active", "banned", "deleted"}:
+    if status in {"active", "restricted", "banned", "deleted"}:
         query["status"] = status
+    if cohort_tag:
+        query["cohort_tag"] = cohort_tag
+    if quality == "yes":
+        query["quality_photographer"] = True
+    elif quality == "no":
+        query["quality_photographer"] = {"$ne": True}
     docs, page, total, per_page = _paginate(mongo.db.users, query, sort=("created_at", -1))
-    return render_template("admin/users.html", users=docs, page=page, total=total, per_page=per_page, q=q, role=role, status=status)
+    cohorts = mongo.db.users.distinct("cohort_tag", {"cohort_tag": {"$nin": ["", None]}})
+    return render_template(
+        "admin/users.html",
+        users=docs,
+        page=page,
+        total=total,
+        per_page=per_page,
+        q=q,
+        role=role,
+        status=status,
+        cohort_tag=cohort_tag,
+        quality=quality,
+        cohorts=sorted(cohorts),
+    )
 
 
 @bp.route("/users/<user_id>")
@@ -164,6 +186,9 @@ def create_admin():
                 "role": "admin",
                 "permissions": normalize_permissions(request.form.getlist("permissions")),
                 "status": "active",
+                "cohort_tag": "",
+                "quality_photographer": False,
+                "restricted_reason": "",
                 "must_change_password": True,
                 "created_at": now(),
                 "updated_at": now(),
@@ -223,6 +248,19 @@ def user_action(user_id):
         update["status"] = "banned"
     elif action == "unban":
         update["status"] = "active"
+        update["restricted_reason"] = ""
+    elif action == "restrict":
+        update["status"] = "restricted"
+        update["restricted_at"] = now()
+        update["restricted_reason"] = request.form.get("restricted_reason", "").strip() or "管理员暂停了互动、发布和投稿功能。"
+    elif action == "activate":
+        update["status"] = "active"
+        update["restricted_reason"] = ""
+    elif action == "mark_quality":
+        update["quality_photographer"] = True
+        update["quality_marked_at"] = now()
+    elif action == "unmark_quality":
+        update["quality_photographer"] = False
     elif action == "delete":
         update["status"] = "deleted"
     elif action == "role":
@@ -234,9 +272,47 @@ def user_action(user_id):
     else:
         abort(400)
     mongo.db.users.update_one({"_id": target["_id"]}, {"$set": update})
+    if action == "mark_quality":
+        protect_update = {
+            "$set": {
+                "storage_status": "active",
+                "storage_reason": "用户已标记为优质摄影，内容从清理池中移出。",
+                "updated_at": now(),
+            }
+        }
+        mongo.db.posts.update_many({"author_id": target["_id"], "storage_status": "deletable"}, protect_update)
+        mongo.db.submissions.update_many({"user_id": target["_id"], "storage_status": "deletable"}, protect_update)
     log_action(f"user_{action}", "user", target["_id"], target.get("username", ""))
     flash("用户状态已更新。", "success")
     return redirect(request.referrer or url_for("admin.users"))
+
+
+@bp.route("/users/batch-status", methods=["POST"])
+@permission_required("manage_users")
+def users_batch_status():
+    cohort_tag = request.form.get("cohort_tag", "").strip()
+    action = request.form.get("action", "")
+    if not cohort_tag or action not in {"restrict", "activate"}:
+        flash("请选择用户标签/届别和批量操作。", "danger")
+        return redirect(url_for("admin.users"))
+    query = {"role": "user", "cohort_tag": cohort_tag, "status": {"$ne": "deleted"}}
+    if action == "restrict":
+        update = {
+            "$set": {
+                "status": "restricted",
+                "restricted_at": now(),
+                "restricted_reason": request.form.get("restricted_reason", "").strip() or f"{cohort_tag} 批量暂停部分功能。",
+                "updated_at": now(),
+            }
+        }
+        label = "暂停"
+    else:
+        update = {"$set": {"status": "active", "restricted_reason": "", "updated_at": now()}}
+        label = "恢复"
+    result = mongo.db.users.update_many(query, update)
+    log_action(f"batch_user_{action}", "user", cohort_tag, f"{result.modified_count} users")
+    flash(f"已按 {cohort_tag} 批量{label} {result.modified_count} 个普通用户账号。", "success")
+    return redirect(url_for("admin.users", cohort_tag=cohort_tag))
 
 
 @bp.route("/users/<user_id>/reset-password", methods=["POST"])
@@ -264,9 +340,22 @@ def invites():
     query = {}
     if q:
         rgx = _regex(q)
-        query["$or"] = [{"code": rgx}, {"real_name": rgx}]
+        query["$or"] = [{"code": rgx}, {"real_name": rgx}, {"cohort_tag": rgx}, {"batch_id": rgx}]
+    cohort_tag = request.args.get("cohort_tag", "").strip()
+    if cohort_tag:
+        query["cohort_tag"] = cohort_tag
     docs, page, total, per_page = _paginate(mongo.db.invite_codes, query, sort=("created_at", -1))
-    return render_template("admin/invites.html", invites=docs, page=page, total=total, per_page=per_page, q=q)
+    cohorts = mongo.db.invite_codes.distinct("cohort_tag", {"cohort_tag": {"$nin": ["", None]}})
+    return render_template(
+        "admin/invites.html",
+        invites=docs,
+        page=page,
+        total=total,
+        per_page=per_page,
+        q=q,
+        cohort_tag=cohort_tag,
+        cohorts=sorted(cohorts),
+    )
 
 
 @bp.route("/invites/new", methods=["POST"])
@@ -274,6 +363,7 @@ def invites():
 def invite_new():
     code = request.form.get("code", "").strip()
     real_name = request.form.get("real_name", "").strip()
+    cohort_tag = _sanitize_cohort_tag(request.form.get("cohort_tag"))
     if not code or not real_name:
         flash("邀请码和真实姓名不能为空。", "danger")
         return redirect(url_for("admin.invites"))
@@ -285,6 +375,7 @@ def invite_new():
                 "used": False,
                 "allow_reuse": request.form.get("allow_reuse") == "on",
                 "used_by": None,
+                "cohort_tag": cohort_tag,
                 "created_at": now(),
                 "used_at": None,
             }
@@ -310,6 +401,12 @@ def _sanitize_invite_prefix(raw_prefix):
     return re.sub(r"[^A-Z0-9_-]", "", prefix)[:12] or "MUXI"
 
 
+def _sanitize_cohort_tag(raw_value):
+    value = (raw_value or "").strip()
+    value = re.sub(r"[\r\n\t]", " ", value)
+    return re.sub(r"\s+", " ", value)[:40]
+
+
 def _row_value(row, *keys):
     for key in keys:
         value = row.get(key)
@@ -323,6 +420,7 @@ def _row_value(row, *keys):
 def invites_generate_sheet():
     count = parse_int(request.form.get("count"), default=30, minimum=1, maximum=500)
     prefix = _sanitize_invite_prefix(request.form.get("prefix"))
+    cohort_tag = _sanitize_cohort_tag(request.form.get("cohort_tag"))
     allow_reuse = request.form.get("allow_reuse") == "on"
     batch_id = secrets.token_hex(6)
 
@@ -340,6 +438,7 @@ def invites_generate_sheet():
                         "used": False,
                         "allow_reuse": allow_reuse,
                         "used_by": None,
+                        "cohort_tag": cohort_tag,
                         "created_at": now(),
                         "used_at": None,
                         "batch_id": batch_id,
@@ -348,7 +447,7 @@ def invites_generate_sheet():
                         "name_bound_at": None,
                     }
                 )
-                rows.append([sequence, "", code, "右侧邀请码可剪下分发；填好姓名后上传本表自动配对"])
+                rows.append([sequence, "", cohort_tag, code, "右侧邀请码可剪下分发；填好姓名后上传本表自动配对"])
                 inserted = True
                 break
             except DuplicateKeyError:
@@ -362,7 +461,7 @@ def invites_generate_sheet():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["序号", "真实姓名（填写）", "邀请码（剪下发放）", "备注"])
+    writer.writerow(["序号", "真实姓名（填写）", "用户标签/届别", "邀请码（剪下发放）", "备注"])
     writer.writerows(rows)
     log_action("generate_invite_sheet", "invite_code", batch_id, f"生成 {len(rows)} 条，失败 {failures}")
     if failures:
@@ -386,6 +485,7 @@ def invites_bind_sheet():
     for index, row in enumerate(reader, start=2):
         code = _row_value(row, "邀请码（剪下发放）", "邀请码", "code")
         real_name = _row_value(row, "真实姓名（填写）", "真实姓名", "real_name")
+        cohort_tag = _sanitize_cohort_tag(_row_value(row, "用户标签/届别", "用户标签", "届别", "cohort_tag"))
         if not code:
             failures.append(f"第 {index} 行缺少邀请码")
             continue
@@ -403,16 +503,17 @@ def invites_bind_sheet():
             failures.append(f"第 {index} 行邀请码已绑定其他姓名：{code}")
             continue
         try:
+            set_fields = {
+                "real_name": real_name,
+                "sheet_status": "bound",
+                "name_bound_at": now(),
+                "updated_at": now(),
+            }
+            if cohort_tag:
+                set_fields["cohort_tag"] = cohort_tag
             result = mongo.db.invite_codes.update_one(
                 {"_id": invite["_id"], "used": False},
-                {
-                    "$set": {
-                        "real_name": real_name,
-                        "sheet_status": "bound",
-                        "name_bound_at": now(),
-                        "updated_at": now(),
-                    }
-                },
+                {"$set": set_fields},
             )
             if result.modified_count:
                 success += 1
@@ -433,6 +534,7 @@ def invites_bind_sheet():
 @permission_required("manage_invites")
 def invites_bulk_generate():
     prefix = _sanitize_invite_prefix(request.form.get("prefix"))
+    cohort_tag = _sanitize_cohort_tag(request.form.get("cohort_tag"))
     names = []
     for line in request.form.get("real_names", "").splitlines():
         name = line.strip()
@@ -456,6 +558,7 @@ def invites_bulk_generate():
                         "used": False,
                         "allow_reuse": request.form.get("allow_reuse") == "on",
                         "used_by": None,
+                        "cohort_tag": cohort_tag,
                         "created_at": now(),
                         "used_at": None,
                         "sheet_status": "bound",
@@ -491,6 +594,7 @@ def invites_import():
     for index, row in enumerate(reader, start=2):
         code = (row.get("邀请码") or row.get("code") or "").strip()
         real_name = (row.get("真实姓名") or row.get("real_name") or "").strip()
+        cohort_tag = _sanitize_cohort_tag(row.get("用户标签/届别") or row.get("用户标签") or row.get("届别") or row.get("cohort_tag"))
         if not code or not real_name:
             failures.append(f"第 {index} 行缺少邀请码或姓名")
             continue
@@ -504,6 +608,7 @@ def invites_import():
                     "used": used,
                     "allow_reuse": False,
                     "used_by": None,
+                    "cohort_tag": cohort_tag,
                     "created_at": now(),
                     "used_at": now() if used else None,
                 }
@@ -521,8 +626,8 @@ def invites_import():
 def invites_template():
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["序号", "真实姓名（填写）", "邀请码（剪下发放）", "备注"])
-    writer.writerow([1, "张三", "MUXI2026A001", "右侧邀请码可剪下分发；填好姓名后上传本表自动配对"])
+    writer.writerow(["序号", "真实姓名（填写）", "用户标签/届别", "邀请码（剪下发放）", "备注"])
+    writer.writerow([1, "张三", "2026届", "MUXI2026A001", "右侧邀请码可剪下分发；填好姓名后上传本表自动配对"])
     return _csv_download(output, "muxi_invite_sheet_template.csv")
 
 
@@ -531,12 +636,13 @@ def invites_template():
 def invites_export():
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["邀请码", "真实姓名", "是否已使用", "绑定用户ID", "创建时间", "使用时间"])
+    writer.writerow(["邀请码", "真实姓名", "用户标签/届别", "是否已使用", "绑定用户ID", "创建时间", "使用时间"])
     for item in mongo.db.invite_codes.find({}).sort("created_at", -1):
         writer.writerow(
             [
                 item.get("code", ""),
                 item.get("real_name", ""),
+                item.get("cohort_tag", ""),
                 "是" if item.get("used") else "否",
                 str(item.get("used_by") or ""),
                 item.get("created_at", ""),
@@ -881,6 +987,36 @@ def download_submissions(activity_id):
     log_action("download_submissions", "activity", activity["_id"], mode)
     name = f"muxi_{activity['_id']}_{mode}.zip"
     return send_file(buffer, as_attachment=True, download_name=name, mimetype="application/zip")
+
+
+@bp.route("/storage", methods=["GET", "POST"])
+@permission_required("manage_storage")
+def storage():
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "mark":
+            older_than_days = parse_int(request.form.get("older_than_days"), default=30, minimum=1, maximum=3650)
+            result = mark_deletable_content(mongo.db, older_than_days=older_than_days)
+            log_action("mark_deletable_content", "storage", "", f"{older_than_days} days")
+            flash(
+                f"已标记 {older_than_days} 天前的普通内容：帖子 {result['posts']} 条，投稿 {result['submissions']} 条。",
+                "success",
+            )
+        elif action == "cleanup":
+            target_free_mb = parse_int(request.form.get("target_free_mb"), default=1024, minimum=1, maximum=1048576)
+            result = cleanup_deletable_files(mongo.db, target_free_mb=target_free_mb)
+            log_action("cleanup_deletable_files", "storage", "", f"{result['deleted_files']} files")
+            if result["skipped"]:
+                flash(f"当前磁盘可用空间 {result['before_free_mb']}MB，已高于目标 {target_free_mb}MB，未执行清理。", "info")
+            else:
+                flash(
+                    f"已按时间从早到晚清理 {result['deleted_files']} 个可删除文件，约释放 {result['freed_mb']}MB。",
+                    "success",
+                )
+        else:
+            abort(400)
+        return redirect(url_for("admin.storage"))
+    return render_template("admin/storage.html", summary=storage_summary(mongo.db))
 
 
 @bp.route("/settings", methods=["GET", "POST"])

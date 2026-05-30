@@ -2,6 +2,7 @@ import os
 import csv
 import shutil
 import sys
+from datetime import timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 
@@ -72,6 +73,7 @@ def main():
             "/admin/reports",
             "/admin/activities",
             "/admin/submissions",
+            "/admin/storage",
             "/admin/settings",
             "/admin/audit-logs",
         ]:
@@ -81,20 +83,26 @@ def main():
         client.get("/admin/invites")
         response = client.post(
             "/admin/invites/new",
-            data={"_csrf_token": csrf_token(), "code": "SMOKE001", "real_name": "调试同学"},
+            data={"_csrf_token": csrf_token(), "code": "SMOKE001", "real_name": "调试同学", "cohort_tag": "2026届"},
             follow_redirects=True,
         )
         check("create invite", response.status_code == 200)
         response = client.post(
             "/admin/invites/generate-sheet",
-            data={"_csrf_token": csrf_token(), "prefix": "SHEET", "count": "2"},
+            data={"_csrf_token": csrf_token(), "prefix": "SHEET", "count": "2", "cohort_tag": "2026届"},
             follow_redirects=True,
         )
         sheet_text = response.data.decode("utf-8-sig")
         sheet_rows = list(csv.DictReader(StringIO(sheet_text)))
         with app.app_context():
             pending_sheet_count = mongo.db.invite_codes.count_documents({"code": {"$regex": "^SHEET"}, "real_name": ""})
-        check("generate blank invite sheet", response.status_code == 200 and len(sheet_rows) == 2 and pending_sheet_count == 2)
+        check(
+            "generate blank invite sheet",
+            response.status_code == 200
+            and len(sheet_rows) == 2
+            and pending_sheet_count == 2
+            and sheet_rows[0].get("用户标签/届别") == "2026届",
+        )
         filled_sheet = StringIO()
         writer = csv.DictWriter(filled_sheet, fieldnames=sheet_rows[0].keys())
         writer.writeheader()
@@ -112,7 +120,7 @@ def main():
         check("bind filled invite sheet", response.status_code == 200 and bound_sheet_count == 2)
         response = client.post(
             "/admin/invites/bulk-generate",
-            data={"_csrf_token": csrf_token(), "prefix": "BULK", "real_names": "批量同学一\n批量同学二"},
+            data={"_csrf_token": csrf_token(), "prefix": "BULK", "cohort_tag": "2026届", "real_names": "批量同学一\n批量同学二"},
             follow_redirects=True,
         )
         with app.app_context():
@@ -136,6 +144,7 @@ def main():
         with app.app_context():
             smoke_user = mongo.db.users.find_one({"username": "smoke_user"})
         check("register invited user", response.status_code == 200 and smoke_user is not None)
+        check("invite cohort copied to user", smoke_user and smoke_user.get("cohort_tag") == "2026届")
 
         client.get("/login")
         response = client.post(
@@ -246,6 +255,113 @@ def main():
         response = client.get(f"/admin/activities/{activity['_id']}/download?mode=selected")
         check("download selected zip", response.status_code == 200 and response.mimetype == "application/zip")
 
+        response = client.post(
+            f"/admin/users/{smoke_user['_id']}/action",
+            data={"_csrf_token": csrf_token(), "action": "mark_quality"},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            smoke_user = mongo.db.users.find_one({"_id": smoke_user["_id"]})
+        check("mark quality photographer", response.status_code == 200 and smoke_user.get("quality_photographer") is True)
+
+        with app.app_context():
+            old_time = now() - timedelta(days=40)
+            ordinary_id = mongo.db.users.insert_one(
+                {
+                    "real_name": "普通旧用户",
+                    "username": "ordinary_old",
+                    "password_hash": hash_password("secret123"),
+                    "contact": "",
+                    "avatar_url": "",
+                    "bio": "",
+                    "role": "user",
+                    "permissions": [],
+                    "status": "active",
+                    "cohort_tag": "2025届",
+                    "quality_photographer": False,
+                    "must_change_password": False,
+                    "created_at": old_time,
+                    "updated_at": old_time,
+                    "last_login_at": None,
+                }
+            ).inserted_id
+            mongo.db.posts.update_one(
+                {"_id": post["_id"]},
+                {"$set": {"created_at": old_time, "storage_status": "active", "storage_marked_at": None}},
+            )
+            mongo.db.submissions.update_one(
+                {"_id": submission["_id"]},
+                {"$set": {"created_at": old_time, "storage_status": "active", "storage_marked_at": None}},
+            )
+            ordinary_post_id = mongo.db.posts.insert_one(
+                {
+                    "author_id": ordinary_id,
+                    "title": "普通旧帖",
+                    "description": "",
+                    "images": post.get("images", []),
+                    "status": "normal",
+                    "storage_status": "active",
+                    "created_at": old_time,
+                    "updated_at": old_time,
+                }
+            ).inserted_id
+            ordinary_submission_id = mongo.db.submissions.insert_one(
+                {
+                    "activity_id": activity["_id"],
+                    "user_id": ordinary_id,
+                    "images": submission.get("images", []),
+                    "description": "普通旧投稿",
+                    "contact": "",
+                    "status": "pending",
+                    "storage_status": "active",
+                    "created_at": old_time,
+                    "updated_at": old_time,
+                }
+            ).inserted_id
+        client.get("/admin/storage")
+        response = client.post(
+            "/admin/storage",
+            data={"_csrf_token": csrf_token(), "action": "mark", "older_than_days": "30"},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            ordinary_post = mongo.db.posts.find_one({"_id": ordinary_post_id})
+            ordinary_submission = mongo.db.submissions.find_one({"_id": ordinary_submission_id})
+            quality_post = mongo.db.posts.find_one({"_id": post["_id"]})
+            quality_submission = mongo.db.submissions.find_one({"_id": submission["_id"]})
+        check(
+            "storage marks ordinary old content only",
+            response.status_code == 200
+            and ordinary_post.get("storage_status") == "deletable"
+            and ordinary_submission.get("storage_status") == "deletable"
+            and quality_post.get("storage_status") != "deletable"
+            and quality_submission.get("storage_status") != "deletable",
+        )
+        response = client.post(
+            "/admin/storage",
+            data={"_csrf_token": csrf_token(), "action": "cleanup", "target_free_mb": "1"},
+            follow_redirects=True,
+        )
+        check("storage cleanup route", response.status_code == 200)
+
+        response = client.post(
+            "/admin/users/batch-status",
+            data={"_csrf_token": csrf_token(), "cohort_tag": "2026届", "action": "restrict", "restricted_reason": "毕业测试"},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            smoke_user = mongo.db.users.find_one({"_id": smoke_user["_id"]})
+        check("batch restrict by cohort", response.status_code == 200 and smoke_user.get("status") == "restricted")
+        client.get("/logout")
+        client.get("/login")
+        client.post(
+            "/login",
+            data={"_csrf_token": csrf_token(), "username": "smoke_user", "password": "secret123"},
+            follow_redirects=True,
+        )
+        response = client.get("/community/new", follow_redirects=False)
+        check("restricted user cannot create post", response.status_code == 302)
+
         with app.app_context():
             limited_password = "secret123"
             limited = mongo.db.users.insert_one(
@@ -259,6 +375,8 @@ def main():
                     "role": "admin",
                     "permissions": ["manage_invites"],
                     "status": "active",
+                    "cohort_tag": "",
+                    "quality_photographer": False,
                     "must_change_password": False,
                     "created_at": now(),
                     "updated_at": now(),

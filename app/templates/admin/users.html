@@ -3,10 +3,20 @@
 {% block admin_content %}
 <div class="section-head"><h1>用户管理</h1></div>
 <form class="filter-bar" method="get">
-  <input name="q" value="{{ q }}" placeholder="搜索用户名、姓名、联系方式">
+  <input name="q" value="{{ q }}" placeholder="搜索用户名、姓名、联系方式、标签">
   <select name="role"><option value="">全部角色</option><option value="user" {% if role=='user' %}selected{% endif %}>user</option><option value="admin" {% if role=='admin' %}selected{% endif %}>admin</option><option value="super_admin" {% if role=='super_admin' %}selected{% endif %}>super_admin</option></select>
-  <select name="status"><option value="">全部状态</option><option value="active" {% if status=='active' %}selected{% endif %}>active</option><option value="banned" {% if status=='banned' %}selected{% endif %}>banned</option><option value="deleted" {% if status=='deleted' %}selected{% endif %}>deleted</option></select>
+  <select name="status"><option value="">全部状态</option><option value="active" {% if status=='active' %}selected{% endif %}>active</option><option value="restricted" {% if status=='restricted' %}selected{% endif %}>restricted</option><option value="banned" {% if status=='banned' %}selected{% endif %}>banned</option><option value="deleted" {% if status=='deleted' %}selected{% endif %}>deleted</option></select>
+  <select name="cohort_tag"><option value="">全部标签/届别</option>{% for cohort in cohorts %}<option value="{{ cohort }}" {% if cohort_tag==cohort %}selected{% endif %}>{{ cohort }}</option>{% endfor %}</select>
+  <select name="quality"><option value="">全部摄影等级</option><option value="yes" {% if quality=='yes' %}selected{% endif %}>优质摄影</option><option value="no" {% if quality=='no' %}selected{% endif %}>普通用户</option></select>
   <button class="btn" type="submit">搜索</button>
+</form>
+<form class="panel inline-form" method="post" action="{{ url_for('admin.users_batch_status') }}" data-confirm="确认对该标签下的普通用户批量更新状态？">
+  {{ csrf_field() }}
+  <select name="cohort_tag" required><option value="">选择标签/届别</option>{% for cohort in cohorts %}<option value="{{ cohort }}" {% if cohort_tag==cohort %}selected{% endif %}>{{ cohort }}</option>{% endfor %}</select>
+  <select name="action" required><option value="restrict">批量暂停部分功能</option><option value="activate">批量恢复 active</option></select>
+  <input name="restricted_reason" placeholder="暂停原因，例如：毕业归档">
+  <button class="btn primary" type="submit">按标签批量处理</button>
+  <span class="muted">restricted 用户可登录浏览，但不能发帖、评论、点赞、收藏、关注或投稿。</span>
 </form>
 {% if current_user.role == 'super_admin' %}
 <form class="panel inline-form" method="post" action="{{ url_for('admin.create_admin') }}">
@@ -27,13 +37,15 @@
 {% endif %}
 <div class="table-wrap">
   <table>
-    <thead><tr><th>用户</th><th>真实姓名</th><th>联系方式</th><th>角色</th><th>后台权限</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+    <thead><tr><th>用户</th><th>真实姓名</th><th>联系方式</th><th>标签/届别</th><th>摄影等级</th><th>角色</th><th>后台权限</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
     <tbody>
       {% for user in users %}
       <tr>
         <td><a href="{{ url_for('admin.user_detail', user_id=user._id) }}">{{ user.username }}</a></td>
         <td>{{ user.real_name }}</td>
         <td>{{ user.contact }}</td>
+        <td>{{ user.cohort_tag or '-' }}</td>
+        <td>{% if user.quality_photographer %}<span class="badge">优质摄影</span>{% else %}<span class="muted">普通</span>{% endif %}</td>
         <td>{{ user.role }}</td>
         <td>
           {% if user.role == 'super_admin' %}
@@ -49,11 +61,13 @@
             <span class="muted">-</span>
           {% endif %}
         </td>
-        <td><span class="badge">{{ user.status }}</span></td>
+        <td><span class="badge">{{ user.status }}</span>{% if user.restricted_reason %}<br><small class="muted">{{ user.restricted_reason }}</small>{% endif %}</td>
         <td>{{ user.created_at|datetime }}</td>
         <td class="actions">
           {% if user._id != current_user._id %}
             {% if current_user.role == 'super_admin' or user.role != 'super_admin' %}
+              <form method="post" action="{{ url_for('admin.user_action', user_id=user._id) }}">{{ csrf_field() }}<input type="hidden" name="action" value="{{ 'activate' if user.status=='restricted' else 'restrict' }}"><button class="btn small" type="submit">{{ '恢复功能' if user.status=='restricted' else '暂停功能' }}</button></form>
+              <form method="post" action="{{ url_for('admin.user_action', user_id=user._id) }}">{{ csrf_field() }}<input type="hidden" name="action" value="{{ 'unmark_quality' if user.quality_photographer else 'mark_quality' }}"><button class="btn small" type="submit">{{ '取消优质' if user.quality_photographer else '标为优质' }}</button></form>
               <form method="post" action="{{ url_for('admin.user_action', user_id=user._id) }}">{{ csrf_field() }}<input type="hidden" name="action" value="{{ 'unban' if user.status=='banned' else 'ban' }}"><button class="btn small" type="submit">{{ '解封' if user.status=='banned' else '封禁' }}</button></form>
               <form method="post" action="{{ url_for('admin.reset_password', user_id=user._id) }}" data-confirm="确认重置该用户密码？">{{ csrf_field() }}<button class="btn small" type="submit">重置密码</button></form>
               <form method="post" action="{{ url_for('admin.user_action', user_id=user._id) }}" data-confirm="确认注销该账号？">{{ csrf_field() }}<input type="hidden" name="action" value="delete"><button class="btn small danger" type="submit">注销</button></form>

@@ -4,6 +4,7 @@ PERMISSIONS = [
     ("moderate_community", "社区内容审核", "隐藏/删除帖子、删除评论、处理举报。"),
     ("manage_activities", "活动管理", "创建、编辑、删除素材征集活动。"),
     ("review_submissions", "投稿审核", "审核投稿、批量审核、下载投稿图片。"),
+    ("manage_storage", "存储治理", "标记过期普通内容，并在磁盘空间不足时按时间清理可删除图片。"),
     ("manage_settings", "网站设置", "修改站点基础信息、主题和默认视觉素材。"),
     ("view_audit_logs", "审计日志", "查看管理员关键操作记录。"),
 ]
