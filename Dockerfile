@@ -5,10 +5,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -17,4 +13,4 @@ RUN mkdir -p uploads/avatars uploads/posts uploads/activities uploads/submission
 
 EXPOSE 5000
 
-CMD ["python", "run.py"]
+CMD ["sh", "-c", "gunicorn -b 0.0.0.0:5000 -w ${GUNICORN_WORKERS:-2} --access-logfile - --error-logfile - wsgi:app"]

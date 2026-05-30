@@ -1,8 +1,10 @@
+from datetime import timedelta
 from pathlib import Path
 
 from bson import ObjectId
 from flask import Flask, g, redirect, render_template, request, session, url_for
 from pymongo.errors import PyMongoError
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import Config
 from app.db_indexes import create_indexes
@@ -16,7 +18,12 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
     app.config["UPLOAD_ROOT"] = config_class.upload_root()
+    app.permanent_session_lifetime = timedelta(days=app.config["PERMANENT_SESSION_LIFETIME_DAYS"])
+    if app.config.get("PROXY_FIX"):
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
     Path(app.config["UPLOAD_ROOT"]).mkdir(parents=True, exist_ok=True)
+    if not app.debug and app.config["SECRET_KEY"] in {"change-me", "change-me-in-production"}:
+        app.logger.warning("生产环境仍在使用默认 SECRET_KEY，请在部署前修改。")
 
     mongo.init_app(app)
 
@@ -100,6 +107,19 @@ def register_hooks(app):
             and not (request.endpoint or "").startswith("static")
         ):
             return redirect(url_for("admin.force_profile"))
+
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=()",
+        )
+        if not app.debug:
+            response.headers.setdefault("Cache-Control", "no-store" if request.path.startswith("/admin") else "private")
+        return response
 
 
 def register_template_helpers(app):

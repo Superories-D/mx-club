@@ -34,6 +34,8 @@ def create_indexes(db, logger=None):
         ("audit_logs", [("admin_id", ASCENDING)], {}),
         ("audit_logs", [("action", ASCENDING)], {}),
         ("audit_logs", [("created_at", DESCENDING)], {}),
+        ("site_settings", [("key", ASCENDING)], {"unique": True}),
+        ("system_locks", [("key", ASCENDING)], {"unique": True}),
     ]
     for collection, keys, options in index_specs:
         try:

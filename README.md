@@ -80,6 +80,8 @@ docker compose logs web
 木樨映像初始 super_admin 已生成，用户名：...，密码：...
 ```
 
+Docker 镜像内使用 Gunicorn 启动 Flask 应用，并提供 `/healthz` 与 `/readyz` 健康检查接口。`docker-compose.yml` 中 web 与 MongoDB 均配置了 healthcheck，MongoDB 就绪后 web 才会启动。
+
 ## 环境变量
 
 | 变量 | 说明 |
@@ -92,6 +94,31 @@ docker compose logs web
 | `MAX_UPLOAD_SIZE_MB` | 单文件上传大小限制，默认 10MB |
 | `SITE_NAME` | 默认网站名称 |
 | `ADMIN_INIT_SHOW_ON_PAGE` | 保留配置，当前默认通过日志查看初始管理员 |
+| `SESSION_COOKIE_SECURE` | HTTPS 部署时建议设为 `true` |
+| `PROXY_FIX` | 反向代理后部署时建议设为 `true` |
+| `GUNICORN_WORKERS` | Docker/Gunicorn worker 数量 |
+
+## 生产部署检查清单
+
+上线前请至少完成：
+
+- 修改 `SECRET_KEY`，不要使用示例值。
+- 若站点通过 HTTPS 访问，设置 `SESSION_COOKIE_SECURE=true`。
+- 若前面有 Nginx、Caddy、Traefik 等反向代理，设置 `PROXY_FIX=true`，并让代理转发 `X-Forwarded-*` 请求头。
+- 为 `uploads/` 和 MongoDB 数据卷准备持久化备份。
+- 不要公开暴露 MongoDB 端口；公网部署时可移除 `mongodb` 的 `ports` 映射，仅保留 Docker 内部网络访问。
+- 使用 `docker compose logs web` 保存首次生成的 super_admin 初始密码，首次登录后立即修改。
+
+## 健康检查
+
+- `GET /healthz`：应用进程存活检查，不访问数据库。
+- `GET /readyz`：应用就绪检查，会 ping MongoDB。
+
+示例：
+
+```powershell
+Invoke-WebRequest http://localhost:5000/readyz -UseBasicParsing
+```
 
 ## MongoDB 配置
 
@@ -160,6 +187,23 @@ app/static/images/generated/
 ```
 
 包含首页 Banner、登录背景、社区封面、活动封面、默认头像、空状态插画。详细提示词见 `docs/image_prompts.md`。管理员可在后台“网站设置”中上传新图片替换。
+
+## 部署前 Smoke Test
+
+本项目提供一个端到端 smoke test，会使用临时 MongoDB 数据库和临时上传目录，结束后自动清理。
+
+```powershell
+python scripts/smoke_test.py
+```
+
+覆盖内容包括：
+
+- 首页、登录、注册、社区、活动、后台主要页面渲染
+- 首次管理员生成
+- 邀请码创建和注册
+- 登录、发帖、点赞、评论
+- 创建活动、投稿、审核、入选 zip 下载
+- 健康检查接口
 
 ## 常见问题
 

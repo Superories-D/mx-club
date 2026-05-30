@@ -33,6 +33,8 @@ def _validate_image(path, mimetype):
             raise UploadError("文件 MIME 类型不支持。")
     try:
         with Image.open(path) as img:
+            if (img.format or "").upper() not in {"JPEG", "PNG", "WEBP"}:
+                raise UploadError("图片格式不支持。")
             img.verify()
     except (UnidentifiedImageError, OSError):
         raise UploadError("上传文件不是有效图片。")

@@ -1,4 +1,5 @@
-from flask import Blueprint, render_template
+from flask import Blueprint, current_app, jsonify, render_template
+from pymongo.errors import PyMongoError
 
 from app.extensions import mongo
 
@@ -26,6 +27,21 @@ def index():
         active_activities=active_activities,
         authors=authors,
     )
+
+
+@bp.route("/healthz")
+def healthz():
+    return jsonify({"status": "ok"})
+
+
+@bp.route("/readyz")
+def readyz():
+    try:
+        mongo.db.command("ping")
+    except PyMongoError as exc:
+        current_app.logger.warning("readyz MongoDB ping failed: %s", exc)
+        return jsonify({"status": "error", "database": "unavailable"}), 503
+    return jsonify({"status": "ok", "database": "ok"})
 
 
 @bp.route("/showcase")
