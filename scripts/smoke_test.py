@@ -1,7 +1,8 @@
 import os
+import csv
 import shutil
 import sys
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 
 from PIL import Image
@@ -85,13 +86,38 @@ def main():
         )
         check("create invite", response.status_code == 200)
         response = client.post(
+            "/admin/invites/generate-sheet",
+            data={"_csrf_token": csrf_token(), "prefix": "SHEET", "count": "2"},
+            follow_redirects=True,
+        )
+        sheet_text = response.data.decode("utf-8-sig")
+        sheet_rows = list(csv.DictReader(StringIO(sheet_text)))
+        with app.app_context():
+            pending_sheet_count = mongo.db.invite_codes.count_documents({"code": {"$regex": "^SHEET"}, "real_name": ""})
+        check("generate blank invite sheet", response.status_code == 200 and len(sheet_rows) == 2 and pending_sheet_count == 2)
+        filled_sheet = StringIO()
+        writer = csv.DictWriter(filled_sheet, fieldnames=sheet_rows[0].keys())
+        writer.writeheader()
+        for idx, row in enumerate(sheet_rows, start=1):
+            row["真实姓名（填写）"] = f"填表同学{idx}"
+            writer.writerow(row)
+        response = client.post(
+            "/admin/invites/bind-sheet",
+            data={"_csrf_token": csrf_token(), "sheet_file": (BytesIO(filled_sheet.getvalue().encode("utf-8-sig")), "sheet.csv")},
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+        with app.app_context():
+            bound_sheet_count = mongo.db.invite_codes.count_documents({"code": {"$regex": "^SHEET"}, "sheet_status": "bound"})
+        check("bind filled invite sheet", response.status_code == 200 and bound_sheet_count == 2)
+        response = client.post(
             "/admin/invites/bulk-generate",
             data={"_csrf_token": csrf_token(), "prefix": "BULK", "real_names": "批量同学一\n批量同学二"},
             follow_redirects=True,
         )
         with app.app_context():
             bulk_count = mongo.db.invite_codes.count_documents({"code": {"$regex": "^BULK"}})
-        check("bulk generate invites", response.status_code == 200 and bulk_count == 2)
+        check("direct bulk generate invites", response.status_code == 200 and bulk_count == 2)
 
         client.get("/logout")
         client.get("/register")

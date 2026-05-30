@@ -2,11 +2,29 @@
 {% block title %}注册表管理 - {{ site_settings.site_name }}{% endblock %}
 {% block admin_content %}
 <h1>注册表管理</h1>
-<form class="filter-bar" method="get"><input name="q" value="{{ q }}" placeholder="搜索邀请码或姓名"><button class="btn" type="submit">搜索</button><a class="btn" href="{{ url_for('admin.invites_template') }}">下载模板</a><a class="btn" href="{{ url_for('admin.invites_export') }}">导出注册表</a></form>
+<form class="filter-bar" method="get"><input name="q" value="{{ q }}" placeholder="搜索邀请码或姓名"><button class="btn" type="submit">搜索</button><a class="btn" href="{{ url_for('admin.invites_template') }}">下载空白表模板</a><a class="btn" href="{{ url_for('admin.invites_export') }}">导出当前注册表</a></form>
 <div class="admin-columns">
+  <form class="panel form-stack" method="post" action="{{ url_for('admin.invites_generate_sheet') }}">
+    {{ csrf_field() }}
+    <h2>生成空白注册表</h2>
+    <p class="muted">先指定数量生成表格：左侧留给老师按顺序填写真实姓名，右侧邀请码可剪下分发。填完后上传本表即可自动配对。</p>
+    <div class="two-col">
+      <input type="number" name="count" value="30" min="1" max="500" required>
+      <input name="prefix" value="MUXI" placeholder="邀请码前缀">
+    </div>
+    <label class="check"><input type="checkbox" name="allow_reuse"> 允许重复使用</label>
+    <button class="btn primary" type="submit">生成并下载表格</button>
+  </form>
+  <form class="panel form-stack" method="post" enctype="multipart/form-data" action="{{ url_for('admin.invites_bind_sheet') }}">
+    {{ csrf_field() }}
+    <h2>上传填名后的表格</h2>
+    <p class="muted">上传刚才下载并填写姓名的 CSV，系统会按每行“真实姓名 + 邀请码”自动绑定。</p>
+    <input type="file" name="sheet_file" accept=".csv" required>
+    <button class="btn primary" type="submit">上传并自动配对</button>
+  </form>
   <form class="panel form-stack" method="post" action="{{ url_for('admin.invite_new') }}">
     {{ csrf_field() }}
-    <h2>创建邀请码</h2>
+    <h2>手动创建单条邀请码</h2>
     <input name="code" placeholder="邀请码" required>
     <input name="real_name" placeholder="真实姓名" required>
     <label class="check"><input type="checkbox" name="allow_reuse"> 允许重复使用</label>
@@ -14,7 +32,8 @@
   </form>
   <form class="panel form-stack" method="post" action="{{ url_for('admin.invites_bulk_generate') }}">
     {{ csrf_field() }}
-    <h2>批量生成邀请码</h2>
+    <h2>按名单直接生成</h2>
+    <p class="muted">兼容旧流程：如果已经有名单，也可以每行一个姓名直接生成并绑定邀请码。</p>
     <input name="prefix" value="MUXI" placeholder="邀请码前缀">
     <textarea name="real_names" rows="6" placeholder="每行一个真实姓名，例如：&#10;张三&#10;李四" required></textarea>
     <label class="check"><input type="checkbox" name="allow_reuse"> 允许重复使用</label>
@@ -30,7 +49,7 @@
 <div class="table-wrap">
   <table><thead><tr><th>邀请码</th><th>真实姓名</th><th>状态</th><th>绑定用户</th><th>创建时间</th><th>使用时间</th><th>操作</th></tr></thead><tbody>
     {% for item in invites %}
-    <tr><td>{{ item.code }}</td><td>{{ item.real_name }}</td><td>{{ '已使用' if item.used else '未使用' }}</td><td>{{ item.used_by or '' }}</td><td>{{ item.created_at|datetime }}</td><td>{{ item.used_at|datetime }}</td><td><form method="post" action="{{ url_for('admin.invite_delete', invite_id=item._id) }}" data-confirm="确认删除邀请码？">{{ csrf_field() }}<button class="btn small danger" type="submit">删除</button></form></td></tr>
+    <tr><td>{{ item.code }}</td><td>{{ item.real_name or '待填写/待上传配对' }}</td><td>{{ '已使用' if item.used else '未使用' }}</td><td>{{ item.used_by or '' }}</td><td>{{ item.created_at|datetime }}</td><td>{{ item.used_at|datetime }}</td><td><form method="post" action="{{ url_for('admin.invite_delete', invite_id=item._id) }}" data-confirm="确认删除邀请码？">{{ csrf_field() }}<button class="btn small danger" type="submit">删除</button></form></td></tr>
     {% endfor %}
   </tbody></table>
 </div>

@@ -25,6 +25,10 @@ def register():
 
         invite = mongo.db.invite_codes.find_one({"code": code, "real_name": real_name})
         if not invite:
+            code_only = mongo.db.invite_codes.find_one({"code": code})
+            if code_only and not code_only.get("real_name"):
+                flash("该邀请码还没有绑定真实姓名，请联系管理员上传填写后的注册表。", "danger")
+                return render_template("auth/register.html")
             flash("邀请码错误或真实姓名不匹配。", "danger")
             return render_template("auth/register.html")
         if invite.get("used") and not invite.get("allow_reuse"):

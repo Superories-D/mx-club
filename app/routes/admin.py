@@ -300,11 +300,139 @@ def _invite_code(prefix="MUXI"):
     return f"{prefix}{secrets.token_hex(4).upper()}"
 
 
+def _csv_download(output, filename):
+    data = io.BytesIO(output.getvalue().encode("utf-8-sig"))
+    return send_file(data, as_attachment=True, download_name=filename, mimetype="text/csv")
+
+
+def _sanitize_invite_prefix(raw_prefix):
+    prefix = (raw_prefix or "MUXI").strip().upper()
+    return re.sub(r"[^A-Z0-9_-]", "", prefix)[:12] or "MUXI"
+
+
+def _row_value(row, *keys):
+    for key in keys:
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+@bp.route("/invites/generate-sheet", methods=["POST"])
+@permission_required("manage_invites")
+def invites_generate_sheet():
+    count = parse_int(request.form.get("count"), default=30, minimum=1, maximum=500)
+    prefix = _sanitize_invite_prefix(request.form.get("prefix"))
+    allow_reuse = request.form.get("allow_reuse") == "on"
+    batch_id = secrets.token_hex(6)
+
+    rows = []
+    failures = 0
+    for sequence in range(1, count + 1):
+        inserted = False
+        for _ in range(12):
+            code = _invite_code(prefix)
+            try:
+                mongo.db.invite_codes.insert_one(
+                    {
+                        "code": code,
+                        "real_name": "",
+                        "used": False,
+                        "allow_reuse": allow_reuse,
+                        "used_by": None,
+                        "created_at": now(),
+                        "used_at": None,
+                        "batch_id": batch_id,
+                        "sequence": sequence,
+                        "sheet_status": "waiting_name",
+                        "name_bound_at": None,
+                    }
+                )
+                rows.append([sequence, "", code, "右侧邀请码可剪下分发；填好姓名后上传本表自动配对"])
+                inserted = True
+                break
+            except DuplicateKeyError:
+                continue
+        if not inserted:
+            failures += 1
+
+    if not rows:
+        flash("生成失败，请更换前缀后重试。", "danger")
+        return redirect(url_for("admin.invites"))
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["序号", "真实姓名（填写）", "邀请码（剪下发放）", "备注"])
+    writer.writerows(rows)
+    log_action("generate_invite_sheet", "invite_code", batch_id, f"生成 {len(rows)} 条，失败 {failures}")
+    if failures:
+        flash(f"已生成 {len(rows)} 条，另有 {failures} 条因随机冲突未生成。", "warning")
+    return _csv_download(output, f"muxi_invite_sheet_{batch_id}.csv")
+
+
+@bp.route("/invites/bind-sheet", methods=["POST"])
+@permission_required("manage_invites")
+def invites_bind_sheet():
+    file = request.files.get("sheet_file")
+    if not file or not file.filename:
+        flash("请选择填写姓名后的注册表 CSV。", "danger")
+        return redirect(url_for("admin.invites"))
+
+    success = 0
+    skipped = 0
+    failures = []
+    text = io.TextIOWrapper(file.stream, encoding="utf-8-sig", newline="")
+    reader = csv.DictReader(text)
+    for index, row in enumerate(reader, start=2):
+        code = _row_value(row, "邀请码（剪下发放）", "邀请码", "code")
+        real_name = _row_value(row, "真实姓名（填写）", "真实姓名", "real_name")
+        if not code:
+            failures.append(f"第 {index} 行缺少邀请码")
+            continue
+        if not real_name:
+            skipped += 1
+            continue
+        invite = mongo.db.invite_codes.find_one({"code": code})
+        if not invite:
+            failures.append(f"第 {index} 行邀请码不存在：{code}")
+            continue
+        if invite.get("used"):
+            failures.append(f"第 {index} 行邀请码已使用：{code}")
+            continue
+        if invite.get("real_name") and invite.get("real_name") != real_name:
+            failures.append(f"第 {index} 行邀请码已绑定其他姓名：{code}")
+            continue
+        try:
+            result = mongo.db.invite_codes.update_one(
+                {"_id": invite["_id"], "used": False},
+                {
+                    "$set": {
+                        "real_name": real_name,
+                        "sheet_status": "bound",
+                        "name_bound_at": now(),
+                        "updated_at": now(),
+                    }
+                },
+            )
+            if result.modified_count:
+                success += 1
+            else:
+                skipped += 1
+        except DuplicateKeyError:
+            failures.append(f"第 {index} 行重复绑定：{code} / {real_name}")
+
+    log_action("bind_invite_sheet", "invite_code", "", f"绑定 {success}，跳过 {skipped}，失败 {len(failures)}")
+    message = f"注册表配对完成：成功绑定 {success} 条，空姓名跳过 {skipped} 条，失败 {len(failures)} 条。"
+    if failures:
+        message += "；".join(failures[:6])
+    flash(message, "success" if success else "warning")
+    return redirect(url_for("admin.invites"))
+
+
 @bp.route("/invites/bulk-generate", methods=["POST"])
 @permission_required("manage_invites")
 def invites_bulk_generate():
-    prefix = request.form.get("prefix", "MUXI").strip().upper() or "MUXI"
-    prefix = re.sub(r"[^A-Z0-9_-]", "", prefix)[:12] or "MUXI"
+    prefix = _sanitize_invite_prefix(request.form.get("prefix"))
     names = []
     for line in request.form.get("real_names", "").splitlines():
         name = line.strip()
@@ -330,6 +458,7 @@ def invites_bulk_generate():
                         "used_by": None,
                         "created_at": now(),
                         "used_at": None,
+                        "sheet_status": "bound",
                     }
                 )
                 success += 1
@@ -392,10 +521,9 @@ def invites_import():
 def invites_template():
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["邀请码", "真实姓名", "是否已使用", "绑定用户ID", "创建时间", "使用时间"])
-    writer.writerow(["MUXI2026A001", "张三", "否", "", "", ""])
-    data = io.BytesIO(output.getvalue().encode("utf-8-sig"))
-    return send_file(data, as_attachment=True, download_name="muxi_invite_template.csv", mimetype="text/csv")
+    writer.writerow(["序号", "真实姓名（填写）", "邀请码（剪下发放）", "备注"])
+    writer.writerow([1, "张三", "MUXI2026A001", "右侧邀请码可剪下分发；填好姓名后上传本表自动配对"])
+    return _csv_download(output, "muxi_invite_sheet_template.csv")
 
 
 @bp.route("/invites/export")
@@ -415,8 +543,7 @@ def invites_export():
                 item.get("used_at", ""),
             ]
         )
-    data = io.BytesIO(output.getvalue().encode("utf-8-sig"))
-    return send_file(data, as_attachment=True, download_name="muxi_invites.csv", mimetype="text/csv")
+    return _csv_download(output, "muxi_invites.csv")
 
 
 @bp.route("/invites/<invite_id>/delete", methods=["POST"])
