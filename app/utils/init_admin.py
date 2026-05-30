@@ -4,6 +4,7 @@ import string
 from pymongo.errors import DuplicateKeyError
 
 from app.extensions import mongo
+from app.utils.permissions import PERMISSION_KEYS
 from app.utils.security import hash_password, now
 
 
@@ -37,6 +38,7 @@ def initialize_admin(app):
             "avatar_url": "",
             "bio": "",
             "role": "super_admin",
+            "permissions": PERMISSION_KEYS,
             "status": "active",
             "must_change_password": True,
             "created_at": now(),

@@ -14,12 +14,20 @@
   <input name="username" placeholder="管理员用户名" required>
   <input name="real_name" placeholder="真实姓名">
   <input name="contact" placeholder="联系方式">
+  <details class="permission-picker">
+    <summary>初始后台权限</summary>
+    <div class="permission-grid">
+      {% for key, label in permission_labels.items() %}
+        <label class="check"><input type="checkbox" name="permissions" value="{{ key }}" checked> {{ label }}</label>
+      {% endfor %}
+    </div>
+  </details>
   <button class="btn primary" type="submit">创建管理员</button>
 </form>
 {% endif %}
 <div class="table-wrap">
   <table>
-    <thead><tr><th>用户</th><th>真实姓名</th><th>联系方式</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+    <thead><tr><th>用户</th><th>真实姓名</th><th>联系方式</th><th>角色</th><th>后台权限</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
     <tbody>
       {% for user in users %}
       <tr>
@@ -27,6 +35,20 @@
         <td>{{ user.real_name }}</td>
         <td>{{ user.contact }}</td>
         <td>{{ user.role }}</td>
+        <td>
+          {% if user.role == 'super_admin' %}
+            <span class="badge">全部权限</span>
+          {% elif user.role == 'admin' %}
+            {% set perms = user.permissions if user.permissions is defined and user.permissions is not none else permission_labels.keys() %}
+            {% for perm in perms %}
+              <span class="badge">{{ permission_labels.get(perm, perm) }}</span>
+            {% else %}
+              <span class="muted">无后台权限</span>
+            {% endfor %}
+          {% else %}
+            <span class="muted">-</span>
+          {% endif %}
+        </td>
         <td><span class="badge">{{ user.status }}</span></td>
         <td>{{ user.created_at|datetime }}</td>
         <td class="actions">
@@ -36,6 +58,7 @@
               <form method="post" action="{{ url_for('admin.reset_password', user_id=user._id) }}" data-confirm="确认重置该用户密码？">{{ csrf_field() }}<button class="btn small" type="submit">重置密码</button></form>
               <form method="post" action="{{ url_for('admin.user_action', user_id=user._id) }}" data-confirm="确认注销该账号？">{{ csrf_field() }}<input type="hidden" name="action" value="delete"><button class="btn small danger" type="submit">注销</button></form>
               {% if current_user.role == 'super_admin' and user.role != 'super_admin' %}
+                {% if user.role == 'admin' %}<a class="btn small" href="{{ url_for('admin.user_permissions', user_id=user._id) }}">权限</a>{% endif %}
                 <form method="post" action="{{ url_for('admin.user_action', user_id=user._id) }}">{{ csrf_field() }}<input type="hidden" name="action" value="role"><select name="role"><option value="user" {% if user.role=='user' %}selected{% endif %}>user</option><option value="admin" {% if user.role=='admin' %}selected{% endif %}>admin</option></select><button class="btn small" type="submit">改角色</button></form>
               {% endif %}
             {% endif %}

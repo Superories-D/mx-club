@@ -32,6 +32,24 @@
         {% endif %}
       {% endif %}
     </div>
+    {% if current_user and current_user._id != post.author_id %}
+      <details class="report-box">
+        <summary>举报作品</summary>
+        <form class="form-stack" method="post" action="{{ url_for('community.report_post', post_id=post._id) }}">
+          {{ csrf_field() }}
+          <label>举报原因
+            <select name="reason">
+              <option value="不当内容">不当内容</option>
+              <option value="侵犯隐私">侵犯隐私</option>
+              <option value="垃圾信息">垃圾信息</option>
+              <option value="其他">其他</option>
+            </select>
+          </label>
+          <label>补充说明<textarea name="detail" rows="2"></textarea></label>
+          <button class="btn small danger" type="submit">提交举报</button>
+        </form>
+      </details>
+    {% endif %}
     {% if current_user and (current_user._id == post.author_id or current_user.role in ['admin','super_admin']) %}
       <div class="action-row">
         <a class="btn" href="{{ url_for('community.edit_post', post_id=post._id) }}">编辑</a>
@@ -60,6 +78,17 @@
           <small>{{ comment.created_at|datetime }}</small>
           {% if current_user and (current_user._id == comment.author_id or current_user.role in ['admin','super_admin']) %}
             <form method="post" action="{{ url_for('community.delete_comment', comment_id=comment._id) }}">{{ csrf_field() }}<button class="link-danger" type="submit">删除</button></form>
+          {% endif %}
+          {% if current_user and current_user._id != comment.author_id %}
+            <details class="mini-report">
+              <summary>举报</summary>
+              <form class="inline-form" method="post" action="{{ url_for('community.report_comment', comment_id=comment._id) }}">
+                {{ csrf_field() }}
+                <select name="reason"><option value="不当内容">不当内容</option><option value="垃圾信息">垃圾信息</option><option value="其他">其他</option></select>
+                <input name="detail" placeholder="补充说明">
+                <button class="btn small danger" type="submit">提交</button>
+              </form>
+            </details>
           {% endif %}
         </div>
       </article>

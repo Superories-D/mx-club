@@ -10,10 +10,11 @@ from bson import ObjectId
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, send_file, url_for
 from pymongo.errors import DuplicateKeyError
 
-from app.decorators import admin_required, login_required
+from app.decorators import admin_required, login_required, permission_required, super_admin_required
 from app.extensions import mongo
 from app.utils.audit import log_action
 from app.utils.files import UploadError, safe_upload_path, save_many, save_upload
+from app.utils.permissions import PERMISSIONS, PERMISSION_KEYS, normalize_permissions
 from app.utils.security import can_manage_user, hash_password, now, parse_int, to_object_id, verify_password
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -56,6 +57,7 @@ def dashboard():
         "today_posts": mongo.db.posts.count_documents({"created_at": {"$gte": today}}),
         "activities": mongo.db.activities.count_documents({}),
         "pending_submissions": mongo.db.submissions.count_documents({"status": "pending"}),
+        "pending_reports": mongo.db.reports.count_documents({"status": "pending"}),
         "likes": mongo.db.likes.count_documents({}),
         "favorites": mongo.db.favorites.count_documents({}),
     }
@@ -113,7 +115,7 @@ def force_profile():
 
 
 @bp.route("/users")
-@admin_required
+@permission_required("manage_users")
 def users():
     q = request.args.get("q", "").strip()
     query = {}
@@ -131,7 +133,7 @@ def users():
 
 
 @bp.route("/users/<user_id>")
-@admin_required
+@permission_required("manage_users")
 def user_detail(user_id):
     user = mongo.db.users.find_one({"_id": to_object_id(user_id)})
     if not user:
@@ -142,10 +144,8 @@ def user_detail(user_id):
 
 
 @bp.route("/users/create-admin", methods=["POST"])
-@admin_required
+@super_admin_required
 def create_admin():
-    if g.user.get("role") != "super_admin":
-        abort(403)
     username = request.form.get("username", "").strip()
     real_name = request.form.get("real_name", "").strip() or "新管理员"
     if not username:
@@ -162,6 +162,7 @@ def create_admin():
                 "avatar_url": "",
                 "bio": "",
                 "role": "admin",
+                "permissions": normalize_permissions(request.form.getlist("permissions")),
                 "status": "active",
                 "must_change_password": True,
                 "created_at": now(),
@@ -176,8 +177,40 @@ def create_admin():
     return redirect(url_for("admin.users"))
 
 
+@bp.route("/users/<user_id>/permissions", methods=["GET", "POST"])
+@super_admin_required
+def user_permissions(user_id):
+    target = mongo.db.users.find_one({"_id": to_object_id(user_id)})
+    if not target:
+        abort(404)
+    if target.get("role") == "super_admin":
+        flash("super_admin 默认拥有全部权限，不需要单独配置。", "info")
+        return redirect(url_for("admin.users"))
+    if target.get("role") != "admin":
+        flash("只有管理员账号可以配置后台权限。", "warning")
+        return redirect(url_for("admin.users"))
+    if request.method == "POST":
+        permissions = normalize_permissions(request.form.getlist("permissions"))
+        mongo.db.users.update_one(
+            {"_id": target["_id"]},
+            {"$set": {"permissions": permissions, "updated_at": now()}},
+        )
+        log_action("update_admin_permissions", "user", target["_id"], ",".join(permissions))
+        flash("管理员权限已更新。", "success")
+        return redirect(url_for("admin.users"))
+    current_permissions = target.get("permissions")
+    if current_permissions is None:
+        current_permissions = PERMISSION_KEYS
+    return render_template(
+        "admin/permissions.html",
+        target=target,
+        permission_options=PERMISSIONS,
+        current_permissions=current_permissions,
+    )
+
+
 @bp.route("/users/<user_id>/action", methods=["POST"])
-@admin_required
+@permission_required("manage_users")
 def user_action(user_id):
     target = mongo.db.users.find_one({"_id": to_object_id(user_id)})
     if not target:
@@ -197,6 +230,7 @@ def user_action(user_id):
         if g.user.get("role") != "super_admin" or role not in {"user", "admin"}:
             abort(403)
         update["role"] = role
+        update["permissions"] = PERMISSION_KEYS if role == "admin" else []
     else:
         abort(400)
     mongo.db.users.update_one({"_id": target["_id"]}, {"$set": update})
@@ -206,7 +240,7 @@ def user_action(user_id):
 
 
 @bp.route("/users/<user_id>/reset-password", methods=["POST"])
-@admin_required
+@permission_required("manage_users")
 def reset_password(user_id):
     target = mongo.db.users.find_one({"_id": to_object_id(user_id)})
     if not target:
@@ -224,7 +258,7 @@ def reset_password(user_id):
 
 
 @bp.route("/invites")
-@admin_required
+@permission_required("manage_invites")
 def invites():
     q = request.args.get("q", "").strip()
     query = {}
@@ -236,7 +270,7 @@ def invites():
 
 
 @bp.route("/invites/new", methods=["POST"])
-@admin_required
+@permission_required("manage_invites")
 def invite_new():
     code = request.form.get("code", "").strip()
     real_name = request.form.get("real_name", "").strip()
@@ -262,8 +296,60 @@ def invite_new():
     return redirect(url_for("admin.invites"))
 
 
+def _invite_code(prefix="MUXI"):
+    return f"{prefix}{secrets.token_hex(4).upper()}"
+
+
+@bp.route("/invites/bulk-generate", methods=["POST"])
+@permission_required("manage_invites")
+def invites_bulk_generate():
+    prefix = request.form.get("prefix", "MUXI").strip().upper() or "MUXI"
+    prefix = re.sub(r"[^A-Z0-9_-]", "", prefix)[:12] or "MUXI"
+    names = []
+    for line in request.form.get("real_names", "").splitlines():
+        name = line.strip()
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        flash("请至少填写一个真实姓名。", "danger")
+        return redirect(url_for("admin.invites"))
+
+    success = 0
+    failures = []
+    for real_name in names:
+        inserted = False
+        for _ in range(8):
+            code = _invite_code(prefix)
+            try:
+                mongo.db.invite_codes.insert_one(
+                    {
+                        "code": code,
+                        "real_name": real_name,
+                        "used": False,
+                        "allow_reuse": request.form.get("allow_reuse") == "on",
+                        "used_by": None,
+                        "created_at": now(),
+                        "used_at": None,
+                    }
+                )
+                success += 1
+                inserted = True
+                break
+            except DuplicateKeyError:
+                continue
+        if not inserted:
+            failures.append(real_name)
+
+    log_action("bulk_generate_invites", "invite_code", "", f"成功 {success}，失败 {len(failures)}")
+    message = f"批量生成完成：成功 {success} 条，失败 {len(failures)} 条。"
+    if failures:
+        message += "失败姓名：" + "、".join(failures[:10])
+    flash(message, "success" if success else "warning")
+    return redirect(url_for("admin.invites"))
+
+
 @bp.route("/invites/import", methods=["POST"])
-@admin_required
+@permission_required("manage_invites")
 def invites_import():
     file = request.files.get("csv_file")
     if not file or not file.filename:
@@ -302,7 +388,7 @@ def invites_import():
 
 
 @bp.route("/invites/template")
-@admin_required
+@permission_required("manage_invites")
 def invites_template():
     output = io.StringIO()
     writer = csv.writer(output)
@@ -313,7 +399,7 @@ def invites_template():
 
 
 @bp.route("/invites/export")
-@admin_required
+@permission_required("manage_invites")
 def invites_export():
     output = io.StringIO()
     writer = csv.writer(output)
@@ -334,7 +420,7 @@ def invites_export():
 
 
 @bp.route("/invites/<invite_id>/delete", methods=["POST"])
-@admin_required
+@permission_required("manage_invites")
 def invite_delete(invite_id):
     mongo.db.invite_codes.delete_one({"_id": to_object_id(invite_id)})
     log_action("delete_invite", "invite_code", invite_id, "")
@@ -343,7 +429,7 @@ def invite_delete(invite_id):
 
 
 @bp.route("/posts")
-@admin_required
+@permission_required("moderate_community")
 def posts():
     q = request.args.get("q", "").strip()
     query = {}
@@ -359,7 +445,7 @@ def posts():
 
 
 @bp.route("/comments")
-@admin_required
+@permission_required("moderate_community")
 def comments():
     q = request.args.get("q", "").strip()
     query = {}
@@ -386,7 +472,7 @@ def comments():
 
 
 @bp.route("/posts/<post_id>/moderate", methods=["POST"])
-@admin_required
+@permission_required("moderate_community")
 def post_moderate(post_id):
     post = mongo.db.posts.find_one({"_id": to_object_id(post_id)})
     if not post:
@@ -402,7 +488,7 @@ def post_moderate(post_id):
 
 
 @bp.route("/comments/<comment_id>/delete", methods=["POST"])
-@admin_required
+@permission_required("moderate_community")
 def admin_delete_comment(comment_id):
     comment = mongo.db.comments.find_one({"_id": to_object_id(comment_id)})
     if not comment:
@@ -412,6 +498,63 @@ def admin_delete_comment(comment_id):
     log_action("delete_comment", "comment", comment["_id"], "")
     flash("评论已删除。", "success")
     return redirect(request.referrer or url_for("admin.posts"))
+
+
+@bp.route("/reports")
+@permission_required("moderate_community")
+def reports():
+    query = {}
+    status = request.args.get("status", "")
+    if status in {"pending", "resolved", "rejected"}:
+        query["status"] = status
+    target_type = request.args.get("target_type", "")
+    if target_type in {"post", "comment"}:
+        query["target_type"] = target_type
+    docs, page, total, per_page = _paginate(mongo.db.reports, query, sort=("created_at", -1))
+    users = _user_map([report.get("reporter_id") for report in docs] + [report.get("handled_by") for report in docs])
+    post_ids = [report.get("target_id") for report in docs if report.get("target_type") == "post"]
+    comment_ids = [report.get("target_id") for report in docs if report.get("target_type") == "comment"]
+    comments_map = {item["_id"]: item for item in mongo.db.comments.find({"_id": {"$in": comment_ids}})}
+    post_ids.extend([item.get("post_id") for item in comments_map.values() if item.get("post_id")])
+    posts_map = {item["_id"]: item for item in mongo.db.posts.find({"_id": {"$in": post_ids}})}
+    return render_template(
+        "admin/reports.html",
+        reports=docs,
+        users=users,
+        posts_map=posts_map,
+        comments_map=comments_map,
+        page=page,
+        total=total,
+        per_page=per_page,
+        status=status,
+        target_type=target_type,
+    )
+
+
+@bp.route("/reports/<report_id>/handle", methods=["POST"])
+@permission_required("moderate_community")
+def handle_report(report_id):
+    report = mongo.db.reports.find_one({"_id": to_object_id(report_id)})
+    if not report:
+        abort(404)
+    status = request.form.get("status")
+    if status not in {"resolved", "rejected", "pending"}:
+        abort(400)
+    mongo.db.reports.update_one(
+        {"_id": report["_id"]},
+        {
+            "$set": {
+                "status": status,
+                "admin_note": request.form.get("admin_note", "").strip(),
+                "handled_by": g.user["_id"] if status != "pending" else None,
+                "handled_at": now() if status != "pending" else None,
+                "updated_at": now(),
+            }
+        },
+    )
+    log_action("handle_report", "report", report["_id"], status)
+    flash("举报处理状态已更新。", "success")
+    return redirect(request.referrer or url_for("admin.reports"))
 
 
 def _activity_payload(existing=None):
@@ -439,7 +582,7 @@ def _activity_payload(existing=None):
 
 
 @bp.route("/activities")
-@admin_required
+@permission_required("manage_activities")
 def admin_activities():
     q = request.args.get("q", "").strip()
     query = {}
@@ -453,7 +596,7 @@ def admin_activities():
 
 
 @bp.route("/activities/new", methods=["GET", "POST"])
-@admin_required
+@permission_required("manage_activities")
 def activity_new():
     if request.method == "POST":
         try:
@@ -474,7 +617,7 @@ def activity_new():
 
 
 @bp.route("/activities/<activity_id>/edit", methods=["GET", "POST"])
-@admin_required
+@permission_required("manage_activities")
 def activity_edit(activity_id):
     activity = mongo.db.activities.find_one({"_id": to_object_id(activity_id)})
     if not activity:
@@ -496,7 +639,7 @@ def activity_edit(activity_id):
 
 
 @bp.route("/activities/<activity_id>/delete", methods=["POST"])
-@admin_required
+@permission_required("manage_activities")
 def activity_delete(activity_id):
     activity = mongo.db.activities.find_one({"_id": to_object_id(activity_id)})
     if not activity:
@@ -508,7 +651,7 @@ def activity_delete(activity_id):
 
 
 @bp.route("/submissions")
-@admin_required
+@permission_required("review_submissions")
 def submissions():
     query = {}
     activity_id = request.args.get("activity_id", "").strip()
@@ -536,7 +679,7 @@ def submissions():
 
 
 @bp.route("/submissions/<submission_id>/review", methods=["POST"])
-@admin_required
+@permission_required("review_submissions")
 def review_submission(submission_id):
     submission = mongo.db.submissions.find_one({"_id": to_object_id(submission_id)})
     if not submission:
@@ -562,7 +705,7 @@ def review_submission(submission_id):
 
 
 @bp.route("/submissions/batch-review", methods=["POST"])
-@admin_required
+@permission_required("review_submissions")
 def batch_review():
     ids = [to_object_id(item) for item in request.form.getlist("submission_ids")]
     status = request.form.get("status")
@@ -587,7 +730,7 @@ def batch_review():
 
 
 @bp.route("/activities/<activity_id>/download")
-@admin_required
+@permission_required("review_submissions")
 def download_submissions(activity_id):
     activity = mongo.db.activities.find_one({"_id": to_object_id(activity_id)})
     if not activity:
@@ -614,7 +757,7 @@ def download_submissions(activity_id):
 
 
 @bp.route("/settings", methods=["GET", "POST"])
-@admin_required
+@permission_required("manage_settings")
 def settings():
     settings_doc = mongo.db.site_settings.find_one({"key": "default"}) or {"key": "default"}
     if request.method == "POST":
@@ -651,7 +794,7 @@ def settings():
 
 
 @bp.route("/audit-logs")
-@admin_required
+@permission_required("view_audit_logs")
 def audit_logs():
     q = request.args.get("q", "").strip()
     query = {}

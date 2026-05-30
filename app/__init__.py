@@ -11,6 +11,7 @@ from app.db_indexes import create_indexes
 from app.extensions import mongo
 from app.utils.files import ensure_upload_dirs
 from app.utils.init_admin import initialize_admin
+from app.utils.permissions import has_permission, permission_label_map
 from app.utils.security import csrf_field, get_csrf_token, get_site_settings, mask_contact, validate_csrf
 
 
@@ -130,6 +131,8 @@ def register_template_helpers(app):
             "site_settings": get_site_settings(),
             "csrf_field": csrf_field,
             "csrf_token": get_csrf_token,
+            "can": has_permission,
+            "permission_labels": permission_label_map(),
         }
 
     @app.template_filter("datetime")

@@ -2,6 +2,8 @@ from functools import wraps
 
 from flask import abort, flash, g, redirect, request, url_for
 
+from app.utils.permissions import has_permission
+
 
 def login_required(view):
     @wraps(view)
@@ -52,3 +54,21 @@ def super_admin_required(view):
         return view(*args, **kwargs)
 
     return wrapped
+
+
+def permission_required(permission):
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not getattr(g, "user", None):
+                flash("请先登录后台。", "warning")
+                return redirect(url_for("auth.login", next=request.full_path))
+            if g.user.get("role") not in ("admin", "super_admin"):
+                abort(403)
+            if not has_permission(g.user, permission):
+                abort(403)
+            return view(*args, **kwargs)
+
+        return wrapped
+
+    return decorator

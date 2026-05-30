@@ -1,0 +1,28 @@
+{% extends "admin/base.html" %}
+{% block title %}权限设置 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<p class="eyebrow">Permissions</p>
+<h1>管理员权限设置</h1>
+<section class="panel">
+  <p><strong>{{ target.username }}</strong> · {{ target.real_name }} · {{ target.contact }}</p>
+  <p class="muted">取消某项权限后，该管理员将无法进入对应后台模块，也不能调用该模块的 POST 操作。</p>
+</section>
+<form class="panel form-stack" method="post">
+  {{ csrf_field() }}
+  <div class="permission-list">
+    {% for key, label, description in permission_options %}
+      <label class="permission-item">
+        <input type="checkbox" name="permissions" value="{{ key }}" {% if key in current_permissions %}checked{% endif %}>
+        <span>
+          <strong>{{ label }}</strong>
+          <small>{{ description }}</small>
+        </span>
+      </label>
+    {% endfor %}
+  </div>
+  <div class="action-row">
+    <button class="btn primary" type="submit">保存权限</button>
+    <a class="btn" href="{{ url_for('admin.users') }}">返回用户管理</a>
+  </div>
+</form>
+{% endblock %}

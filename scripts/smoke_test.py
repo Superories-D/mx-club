@@ -20,6 +20,7 @@ os.environ["TESTING"] = "true"
 
 from app import create_app  # noqa: E402
 from app.extensions import mongo  # noqa: E402
+from app.utils.security import hash_password, now  # noqa: E402
 
 
 def image_file(name="test.png"):
@@ -67,6 +68,7 @@ def main():
             "/admin/invites",
             "/admin/posts",
             "/admin/comments",
+            "/admin/reports",
             "/admin/activities",
             "/admin/submissions",
             "/admin/settings",
@@ -82,6 +84,14 @@ def main():
             follow_redirects=True,
         )
         check("create invite", response.status_code == 200)
+        response = client.post(
+            "/admin/invites/bulk-generate",
+            data={"_csrf_token": csrf_token(), "prefix": "BULK", "real_names": "批量同学一\n批量同学二"},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            bulk_count = mongo.db.invite_codes.count_documents({"code": {"$regex": "^BULK"}})
+        check("bulk generate invites", response.status_code == 200 and bulk_count == 2)
 
         client.get("/logout")
         client.get("/register")
@@ -135,6 +145,22 @@ def main():
             follow_redirects=True,
         )
         check("comment post", response.status_code == 200)
+        with app.app_context():
+            comment = mongo.db.comments.find_one({"post_id": post["_id"]})
+        response = client.post(
+            f"/community/{post['_id']}/report",
+            data={"_csrf_token": csrf_token(), "reason": "测试举报", "detail": "帖子举报测试"},
+            follow_redirects=True,
+        )
+        check("report post", response.status_code == 200)
+        response = client.post(
+            f"/community/comments/{comment['_id']}/report",
+            data={"_csrf_token": csrf_token(), "reason": "测试举报", "detail": "评论举报测试"},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            report_count = mongo.db.reports.count_documents({"status": "pending"})
+        check("report comment", response.status_code == 200 and report_count == 2)
 
         with client.session_transaction() as sess:
             sess["user_id"] = str(admin["_id"])
@@ -193,6 +219,35 @@ def main():
         check("review submission", response.status_code == 200)
         response = client.get(f"/admin/activities/{activity['_id']}/download?mode=selected")
         check("download selected zip", response.status_code == 200 and response.mimetype == "application/zip")
+
+        with app.app_context():
+            limited_password = "secret123"
+            limited = mongo.db.users.insert_one(
+                {
+                    "real_name": "受限管理员",
+                    "username": "limited_admin",
+                    "password_hash": hash_password(limited_password),
+                    "contact": "",
+                    "avatar_url": "",
+                    "bio": "",
+                    "role": "admin",
+                    "permissions": ["manage_invites"],
+                    "status": "active",
+                    "must_change_password": False,
+                    "created_at": now(),
+                    "updated_at": now(),
+                    "last_login_at": None,
+                }
+            ).inserted_id
+        client.get("/logout")
+        client.get("/login")
+        client.post(
+            "/login",
+            data={"_csrf_token": csrf_token(), "username": "limited_admin", "password": limited_password},
+            follow_redirects=True,
+        )
+        check("permission allows granted module", client.get("/admin/invites").status_code == 200)
+        check("permission blocks missing module", client.get("/admin/users").status_code == 403)
 
         ok = all(value for _, value in results)
         print("SUMMARY", "PASS" if ok else "FAIL", f"{sum(value for _, value in results)}/{len(results)}")

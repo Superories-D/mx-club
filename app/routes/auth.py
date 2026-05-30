@@ -39,6 +39,7 @@ def register():
             "avatar_url": "",
             "bio": "",
             "role": "user",
+            "permissions": [],
             "status": "active",
             "must_change_password": False,
             "created_at": now(),

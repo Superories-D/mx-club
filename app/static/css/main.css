@@ -337,6 +337,30 @@ th { background: #f7f8f4; color: #555b57; font-size: .9rem; }
 .submission-card { display: grid; grid-template-columns: auto minmax(220px, 380px) 1fr; gap: 1rem; align-items: start; }
 .submission-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .submission-images img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 8px; }
+.permission-picker { width: 100%; }
+.permission-picker summary { cursor: pointer; font-weight: 700; color: var(--theme); }
+.permission-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-top: .75rem; }
+.permission-list { display: grid; gap: .8rem; }
+.permission-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .75rem;
+  align-items: start;
+  padding: .85rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.permission-item input { width: auto; margin-top: .2rem; }
+.permission-item small { display: block; color: var(--muted); font-weight: 400; }
+.report-box, .mini-report {
+  margin-top: .75rem;
+  padding: .75rem;
+  border: 1px dashed rgba(168,60,66,.35);
+  border-radius: 8px;
+  background: rgba(168,60,66,.04);
+}
+.report-box summary, .mini-report summary { cursor: pointer; color: #8a3239; font-weight: 700; }
 
 .pagination { display: flex; justify-content: center; gap: 1rem; margin: 1.5rem 0; }
 .pagination a, .pagination span { padding: .45rem .75rem; border: 1px solid var(--line); border-radius: 8px; background: #fff; }

@@ -4,14 +4,15 @@
   <aside class="admin-sidebar">
     <h2>后台管理</h2>
     <a href="{{ url_for('admin.dashboard') }}">仪表盘</a>
-    <a href="{{ url_for('admin.users') }}">用户管理</a>
-    <a href="{{ url_for('admin.invites') }}">注册表管理</a>
-    <a href="{{ url_for('admin.posts') }}">社区内容</a>
-    <a href="{{ url_for('admin.comments') }}">评论管理</a>
-    <a href="{{ url_for('admin.admin_activities') }}">活动管理</a>
-    <a href="{{ url_for('admin.submissions') }}">投稿审核</a>
-    <a href="{{ url_for('admin.settings') }}">网站设置</a>
-    <a href="{{ url_for('admin.audit_logs') }}">审计日志</a>
+    {% if can(current_user, 'manage_users') %}<a href="{{ url_for('admin.users') }}">用户管理</a>{% endif %}
+    {% if can(current_user, 'manage_invites') %}<a href="{{ url_for('admin.invites') }}">注册表管理</a>{% endif %}
+    {% if can(current_user, 'moderate_community') %}<a href="{{ url_for('admin.posts') }}">社区内容</a>{% endif %}
+    {% if can(current_user, 'moderate_community') %}<a href="{{ url_for('admin.comments') }}">评论管理</a>{% endif %}
+    {% if can(current_user, 'moderate_community') %}<a href="{{ url_for('admin.reports') }}">举报管理</a>{% endif %}
+    {% if can(current_user, 'manage_activities') %}<a href="{{ url_for('admin.admin_activities') }}">活动管理</a>{% endif %}
+    {% if can(current_user, 'review_submissions') %}<a href="{{ url_for('admin.submissions') }}">投稿审核</a>{% endif %}
+    {% if can(current_user, 'manage_settings') %}<a href="{{ url_for('admin.settings') }}">网站设置</a>{% endif %}
+    {% if can(current_user, 'view_audit_logs') %}<a href="{{ url_for('admin.audit_logs') }}">审计日志</a>{% endif %}
   </aside>
   <div class="admin-main">
     {% block admin_content %}{% endblock %}

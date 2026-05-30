@@ -12,6 +12,14 @@
     <label class="check"><input type="checkbox" name="allow_reuse"> 允许重复使用</label>
     <button class="btn primary" type="submit">创建</button>
   </form>
+  <form class="panel form-stack" method="post" action="{{ url_for('admin.invites_bulk_generate') }}">
+    {{ csrf_field() }}
+    <h2>批量生成邀请码</h2>
+    <input name="prefix" value="MUXI" placeholder="邀请码前缀">
+    <textarea name="real_names" rows="6" placeholder="每行一个真实姓名，例如：&#10;张三&#10;李四" required></textarea>
+    <label class="check"><input type="checkbox" name="allow_reuse"> 允许重复使用</label>
+    <button class="btn primary" type="submit">批量生成</button>
+  </form>
   <form class="panel form-stack" method="post" enctype="multipart/form-data" action="{{ url_for('admin.invites_import') }}">
     {{ csrf_field() }}
     <h2>CSV 批量导入</h2>

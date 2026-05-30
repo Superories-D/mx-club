@@ -251,3 +251,63 @@ def delete_comment(comment_id):
     mongo.db.posts.update_one({"_id": comment["post_id"]}, {"$inc": {"comment_count": -1}})
     flash("评论已删除。", "success")
     return redirect(request.referrer or url_for("community.list_posts"))
+
+
+def _create_report(target_type, target_id, reason, detail=""):
+    existing = mongo.db.reports.find_one(
+        {
+            "reporter_id": g.user["_id"],
+            "target_type": target_type,
+            "target_id": target_id,
+            "status": "pending",
+        }
+    )
+    if existing:
+        flash("你已经举报过该内容，管理员会尽快处理。", "info")
+        return
+    mongo.db.reports.insert_one(
+        {
+            "reporter_id": g.user["_id"],
+            "target_type": target_type,
+            "target_id": target_id,
+            "reason": reason,
+            "detail": detail,
+            "status": "pending",
+            "handled_by": None,
+            "handled_at": None,
+            "admin_note": "",
+            "created_at": now(),
+            "updated_at": now(),
+        }
+    )
+    flash("举报已提交，感谢你帮助维护社区秩序。", "success")
+
+
+@bp.route("/<post_id>/report", methods=["POST"])
+@active_required
+def report_post(post_id):
+    post = mongo.db.posts.find_one({"_id": to_object_id(post_id), "status": {"$ne": "deleted"}})
+    if not post:
+        abort(404)
+    _create_report(
+        "post",
+        post["_id"],
+        request.form.get("reason", "").strip() or "其他",
+        request.form.get("detail", "").strip(),
+    )
+    return redirect(url_for("community.detail", post_id=post_id))
+
+
+@bp.route("/comments/<comment_id>/report", methods=["POST"])
+@active_required
+def report_comment(comment_id):
+    comment = mongo.db.comments.find_one({"_id": to_object_id(comment_id), "status": "normal"})
+    if not comment:
+        abort(404)
+    _create_report(
+        "comment",
+        comment["_id"],
+        request.form.get("reason", "").strip() or "其他",
+        request.form.get("detail", "").strip(),
+    )
+    return redirect(request.referrer or url_for("community.detail", post_id=comment["post_id"]))

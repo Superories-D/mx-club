@@ -10,7 +10,15 @@
     <span class="badge">{{ activity.status }}</span>
     <h3>{{ activity.title }}</h3>
     <p>{{ activity.intro|truncate(90) }}</p>
-    <div class="action-row"><a class="btn small" href="{{ url_for('admin.activity_edit', activity_id=activity._id) }}">编辑</a><a class="btn small" href="{{ url_for('admin.submissions', activity_id=activity._id) }}">投稿</a><a class="btn small" href="{{ url_for('admin.download_submissions', activity_id=activity._id) }}">下载全部</a><a class="btn small" href="{{ url_for('admin.download_submissions', activity_id=activity._id, mode='selected') }}">下载入选</a><form method="post" action="{{ url_for('admin.activity_delete', activity_id=activity._id) }}" data-confirm="确认删除活动？">{{ csrf_field() }}<button class="btn small danger" type="submit">删除</button></form></div>
+    <div class="action-row">
+      <a class="btn small" href="{{ url_for('admin.activity_edit', activity_id=activity._id) }}">编辑</a>
+      {% if can(current_user, 'review_submissions') %}
+        <a class="btn small" href="{{ url_for('admin.submissions', activity_id=activity._id) }}">投稿</a>
+        <a class="btn small" href="{{ url_for('admin.download_submissions', activity_id=activity._id) }}">下载全部</a>
+        <a class="btn small" href="{{ url_for('admin.download_submissions', activity_id=activity._id, mode='selected') }}">下载入选</a>
+      {% endif %}
+      <form method="post" action="{{ url_for('admin.activity_delete', activity_id=activity._id) }}" data-confirm="确认删除活动？">{{ csrf_field() }}<button class="btn small danger" type="submit">删除</button></form>
+    </div>
   </article>
   {% endfor %}
 </div>
