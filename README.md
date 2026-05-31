@@ -277,7 +277,7 @@ uploads/
 app/static/images/generated/
 ```
 
-包含首页 Banner、登录背景、社区封面、活动封面、默认头像、空状态插画。用户资料页另提供 20 张本地预设头像。详细提示词见 `docs/image_prompts.md`。管理员可在后台“网站设置”中上传新图片替换。
+包含首页 Banner、登录背景、社区封面、活动封面、默认头像、空状态插画。用户资料页另提供 30 张本地预设头像。详细提示词见 `docs/image_prompts.md`。管理员可在后台“网站设置”中上传新图片替换。
 
 ## 部署前 Smoke Test
 

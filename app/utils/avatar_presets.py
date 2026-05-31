@@ -1,4 +1,4 @@
-AVATAR_PRESETS = tuple(f"/static/images/avatars/avatar-{index:02d}.webp" for index in range(1, 21))
+AVATAR_PRESETS = tuple(f"/static/images/avatars/avatar-{index:02d}.webp" for index in range(1, 31))
 
 
 def normalize_preset_avatar(value):
