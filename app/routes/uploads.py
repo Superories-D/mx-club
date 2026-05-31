@@ -3,6 +3,7 @@ from flask import Blueprint, abort, g, send_file
 from app.extensions import mongo
 from app.utils.files import safe_upload_path
 from app.utils.permissions import has_permission
+from app.utils.post_visibility import post_access_state
 
 bp = Blueprint("uploads", __name__, url_prefix="/uploads")
 
@@ -18,17 +19,20 @@ def uploaded_file(category, filename):
     if category == "submissions" and not _can_access_submission_image(url):
         abort(404)
     response = send_file(path)
-    if category == "submissions":
+    if category in {"posts", "submissions"}:
         response.headers["Cache-Control"] = "private, no-store"
     return response
 
 
 def _can_access_post_image(url):
-    post = mongo.db.posts.find_one({"images": url}, {"author_id": 1, "status": 1})
+    post = mongo.db.posts.find_one(
+        {"images": url},
+        {"author_id": 1, "status": 1, "visibility": 1, "follow_delay_days": 1},
+    )
     if not post:
         return False
     if post.get("status") == "normal":
-        return True
+        return post_access_state(post, getattr(g, "user", None))["image_visible"]
     user = getattr(g, "user", None)
     return bool(
         user

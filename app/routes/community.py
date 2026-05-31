@@ -6,6 +6,14 @@ from pymongo.errors import DuplicateKeyError
 from app.decorators import active_required, login_required
 from app.extensions import mongo
 from app.utils.files import UploadError, delete_upload_url, save_many
+from app.utils.post_visibility import (
+    attach_post_access,
+    can_moderate_posts,
+    normalize_follow_delay_days,
+    normalize_post_visibility,
+    post_access_state,
+    visible_post_query,
+)
 from app.utils.rate_limit import consume_rate_limit
 from app.utils.security import now, parse_int, safe_redirect_url, to_object_id
 from app.utils.validation import ValidationError, clean_text
@@ -14,12 +22,13 @@ bp = Blueprint("community", __name__, url_prefix="/community")
 
 
 def _post_query():
-    query = {"status": "normal"}
     keyword = request.args.get("q", "").strip()[:120]
     tag = request.args.get("tag", "").strip()[:30]
+    keyword_clause = None
     if keyword:
         regex = re.compile(re.escape(keyword), re.IGNORECASE)
-        query["$or"] = [{"title": regex}, {"description": regex}, {"tags": regex}]
+        keyword_clause = {"$or": [{"title": regex}, {"description": regex}, {"tags": regex}]}
+    query = visible_post_query(getattr(g, "user", None), keyword_clause)
     if tag:
         query["tags"] = tag
     return query, keyword, tag
@@ -31,6 +40,7 @@ def _author_map(posts):
 
 
 def _post_fields():
+    user = getattr(g, "user", None) or {}
     return {
         "title": clean_text(request.form.get("title"), "作品标题", 120, required=True),
         "description": clean_text(request.form.get("description"), "作品描述", 5000),
@@ -42,6 +52,14 @@ def _post_fields():
             for item in request.form.get("tags", "").replace("，", ",").split(",")
             if item.strip()
         ][:12],
+        "visibility": normalize_post_visibility(
+            request.form.get("visibility"),
+            normalize_post_visibility(user.get("default_post_visibility")),
+        ),
+        "follow_delay_days": normalize_follow_delay_days(
+            request.form.get("follow_delay_days"),
+            normalize_follow_delay_days(user.get("default_follow_delay_days")),
+        ),
     }
 
 
@@ -57,6 +75,7 @@ def list_posts():
         .skip((page - 1) * per_page)
         .limit(per_page)
     )
+    attach_post_access(posts, getattr(g, "user", None))
     authors = _author_map(posts)
     return render_template(
         "community/list.html",
@@ -98,6 +117,8 @@ def new_post():
                     "shoot_time": fields["shoot_time"],
                     "device": fields["device"],
                     "tags": fields["tags"],
+                    "visibility": fields["visibility"],
+                    "follow_delay_days": fields["follow_delay_days"],
                     "view_count": 0,
                     "like_count": 0,
                     "favorite_count": 0,
@@ -123,24 +144,33 @@ def new_post():
 @bp.route("/<post_id>")
 def detail(post_id):
     post = mongo.db.posts.find_one({"_id": to_object_id(post_id), "status": {"$ne": "deleted"}})
-    if not post or (post.get("status") != "normal" and not getattr(g, "user", None)):
+    if not post:
         abort(404)
-    if post.get("status") != "normal" and g.user.get("role") not in ("admin", "super_admin"):
+    user = getattr(g, "user", None)
+    access = post_access_state(post, user)
+    if post.get("status") != "normal" and not (
+        user and (post.get("author_id") == user["_id"] or can_moderate_posts(user))
+    ):
+        abort(404)
+    if post.get("status") == "normal" and not access["detail_visible"]:
         abort(404)
     mongo.db.posts.update_one({"_id": post["_id"]}, {"$inc": {"view_count": 1}})
     post["view_count"] = post.get("view_count", 0) + 1
     author = mongo.db.users.find_one({"_id": post["author_id"]})
-    comments = list(mongo.db.comments.find({"post_id": post["_id"], "status": "normal"}).sort("created_at", -1).limit(300))
+    comments = []
+    if access["image_visible"]:
+        comments = list(mongo.db.comments.find({"post_id": post["_id"], "status": "normal"}).sort("created_at", -1).limit(300))
     comments.reverse()
     comment_authors = _author_map([{"author_id": item["author_id"]} for item in comments])
     liked = favorited = followed = False
-    if getattr(g, "user", None):
-        liked = mongo.db.likes.find_one({"user_id": g.user["_id"], "post_id": post["_id"]}) is not None
-        favorited = mongo.db.favorites.find_one({"user_id": g.user["_id"], "post_id": post["_id"]}) is not None
+    if user:
         followed = (
             author
-            and mongo.db.follows.find_one({"follower_id": g.user["_id"], "following_id": author["_id"]}) is not None
+            and mongo.db.follows.find_one({"follower_id": user["_id"], "following_id": author["_id"]}) is not None
         )
+    if user and access["image_visible"]:
+        liked = mongo.db.likes.find_one({"user_id": g.user["_id"], "post_id": post["_id"]}) is not None
+        favorited = mongo.db.favorites.find_one({"user_id": g.user["_id"], "post_id": post["_id"]}) is not None
     return render_template(
         "community/detail.html",
         post=post,
@@ -150,6 +180,7 @@ def detail(post_id):
         liked=liked,
         favorited=favorited,
         followed=followed,
+        access=access,
     )
 
 
@@ -159,7 +190,7 @@ def edit_post(post_id):
     post = mongo.db.posts.find_one({"_id": to_object_id(post_id), "status": {"$ne": "deleted"}})
     if not post:
         abort(404)
-    if post["author_id"] != g.user["_id"] and g.user.get("role") not in ("admin", "super_admin"):
+    if post["author_id"] != g.user["_id"] and not can_moderate_posts(g.user):
         abort(403)
     if request.method == "POST":
         try:
@@ -196,7 +227,7 @@ def delete_post(post_id):
     post = mongo.db.posts.find_one({"_id": to_object_id(post_id), "status": {"$ne": "deleted"}})
     if not post:
         abort(404)
-    if post["author_id"] != g.user["_id"] and g.user.get("role") not in ("admin", "super_admin"):
+    if post["author_id"] != g.user["_id"] and not can_moderate_posts(g.user):
         abort(403)
     mongo.db.posts.update_one({"_id": post["_id"]}, {"$set": {"status": "deleted", "updated_at": now()}})
     flash("作品已删除。", "success")
@@ -208,9 +239,7 @@ def delete_post(post_id):
 def toggle_like(post_id):
     if not consume_rate_limit("community.like", 300, 3600, str(g.user["_id"])):
         abort(429)
-    post = mongo.db.posts.find_one({"_id": to_object_id(post_id), "status": "normal"})
-    if not post:
-        abort(404)
+    post = _post_for_interaction(post_id)
     existing = mongo.db.likes.find_one({"user_id": g.user["_id"], "post_id": post["_id"]})
     if existing:
         result = mongo.db.likes.delete_one({"_id": existing["_id"]})
@@ -232,9 +261,7 @@ def toggle_like(post_id):
 def toggle_favorite(post_id):
     if not consume_rate_limit("community.favorite", 300, 3600, str(g.user["_id"])):
         abort(429)
-    post = mongo.db.posts.find_one({"_id": to_object_id(post_id), "status": "normal"})
-    if not post:
-        abort(404)
+    post = _post_for_interaction(post_id)
     existing = mongo.db.favorites.find_one({"user_id": g.user["_id"], "post_id": post["_id"]})
     if existing:
         result = mongo.db.favorites.delete_one({"_id": existing["_id"]})
@@ -256,9 +283,7 @@ def toggle_favorite(post_id):
 def add_comment(post_id):
     if not consume_rate_limit("community.comment", 60, 3600, str(g.user["_id"])):
         abort(429)
-    post = mongo.db.posts.find_one({"_id": to_object_id(post_id), "status": "normal"})
-    if not post:
-        abort(404)
+    post = _post_for_interaction(post_id)
     try:
         content = clean_text(request.form.get("content"), "评论", 1000, required=True)
     except ValidationError as exc:
@@ -285,7 +310,7 @@ def delete_comment(comment_id):
     comment = mongo.db.comments.find_one({"_id": to_object_id(comment_id), "status": "normal"})
     if not comment:
         abort(404)
-    if comment["author_id"] != g.user["_id"] and g.user.get("role") not in ("admin", "super_admin"):
+    if comment["author_id"] != g.user["_id"] and not can_moderate_posts(g.user):
         abort(403)
     result = mongo.db.comments.update_one(
         {"_id": comment["_id"], "status": "normal"},
@@ -339,12 +364,17 @@ def _create_report(target_type, target_id, reason, detail=""):
     flash("举报已提交，感谢你帮助维护社区秩序。", "success")
 
 
+def _post_for_interaction(post_id):
+    post = mongo.db.posts.find_one({"_id": to_object_id(post_id), "status": "normal"})
+    if not post or not post_access_state(post, getattr(g, "user", None))["image_visible"]:
+        abort(404)
+    return post
+
+
 @bp.route("/<post_id>/report", methods=["POST"])
 @active_required
 def report_post(post_id):
-    post = mongo.db.posts.find_one({"_id": to_object_id(post_id), "status": {"$ne": "deleted"}})
-    if not post:
-        abort(404)
+    post = _post_for_interaction(post_id)
     _create_report(
         "post",
         post["_id"],
@@ -360,6 +390,7 @@ def report_comment(comment_id):
     comment = mongo.db.comments.find_one({"_id": to_object_id(comment_id), "status": "normal"})
     if not comment:
         abort(404)
+    _post_for_interaction(comment["post_id"])
     _create_report(
         "comment",
         comment["_id"],

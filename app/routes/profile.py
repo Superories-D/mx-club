@@ -3,7 +3,9 @@ from pymongo.errors import DuplicateKeyError
 
 from app.decorators import active_required, login_required
 from app.extensions import mongo
-from app.utils.files import UploadError, delete_upload_url, save_upload
+from app.utils.avatar_presets import AVATAR_PRESETS, normalize_preset_avatar
+from app.utils.files import UploadError, delete_upload_url, save_avatar_upload
+from app.utils.post_visibility import attach_post_access, normalize_follow_delay_days, normalize_post_visibility
 from app.utils.rate_limit import consume_rate_limit
 from app.utils.security import hash_password, now, safe_redirect_url, to_object_id, verify_password
 from app.utils.validation import ValidationError, clean_text, clean_username, validate_password
@@ -17,6 +19,7 @@ def user_home(user_id):
     if not user:
         abort(404)
     posts = list(mongo.db.posts.find({"author_id": user["_id"], "status": "normal"}).sort("created_at", -1).limit(120))
+    posts = [post for post in attach_post_access(posts, getattr(g, "user", None)) if post["_access"]["list_visible"]]
     follower_count = mongo.db.follows.count_documents({"following_id": user["_id"]})
     following_count = mongo.db.follows.count_documents({"follower_id": user["_id"]})
     post_ids = [post["_id"] for post in posts]
@@ -46,9 +49,15 @@ def settings():
                     "username": clean_username(request.form.get("username")),
                     "bio": clean_text(request.form.get("bio"), "简介", 500),
                     "contact": clean_text(request.form.get("contact"), "联系方式", 120),
+                    "default_post_visibility": normalize_post_visibility(request.form.get("default_post_visibility")),
+                    "default_follow_delay_days": normalize_follow_delay_days(request.form.get("default_follow_delay_days")),
                     "updated_at": now(),
                 }
+                avatar_preset = normalize_preset_avatar(request.form.get("avatar_preset"))
             except ValidationError as exc:
+                flash(str(exc), "danger")
+                return redirect(url_for("profile.settings"))
+            except ValueError as exc:
                 flash(str(exc), "danger")
                 return redirect(url_for("profile.settings"))
             avatar = request.files.get("avatar")
@@ -56,10 +65,17 @@ def settings():
                 if not consume_rate_limit("profile.avatar", 20, 3600, str(g.user["_id"])):
                     abort(429)
                 try:
-                    update["avatar_url"] = save_upload(avatar, "avatars")
+                    update["avatar_url"] = save_avatar_upload(
+                        avatar,
+                        request.form.get("avatar_crop_x"),
+                        request.form.get("avatar_crop_y"),
+                        request.form.get("avatar_crop_zoom"),
+                    )
                 except UploadError as exc:
                     flash(str(exc), "danger")
                     return redirect(url_for("profile.settings"))
+            elif avatar_preset:
+                update["avatar_url"] = avatar_preset
             try:
                 mongo.db.users.update_one({"_id": g.user["_id"]}, {"$set": update})
                 if update.get("avatar_url") and g.user.get("avatar_url") != update["avatar_url"]:
@@ -106,7 +122,7 @@ def settings():
         else:
             abort(400)
         return redirect(url_for("profile.settings"))
-    return render_template("profile/settings.html")
+    return render_template("profile/settings.html", avatar_presets=AVATAR_PRESETS)
 
 
 @bp.route("/users/<user_id>/follow", methods=["POST"])

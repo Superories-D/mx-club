@@ -18,6 +18,7 @@ def create_indexes(db, logger=None):
         ("posts", [("author_id", ASCENDING)], {}),
         ("posts", [("created_at", DESCENDING)], {}),
         ("posts", [("status", ASCENDING)], {}),
+        ("posts", [("status", ASCENDING), ("visibility", ASCENDING), ("created_at", DESCENDING)], {}),
         ("posts", [("storage_status", ASCENDING)], {}),
         ("posts", [("storage_marked_at", ASCENDING)], {}),
         ("comments", [("post_id", ASCENDING)], {}),

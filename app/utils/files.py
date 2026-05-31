@@ -1,9 +1,10 @@
+import math
 import mimetypes
 import uuid
 import warnings
 
 from flask import current_app
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
 
@@ -83,6 +84,40 @@ def save_upload(file_storage, category):
         path.unlink(missing_ok=True)
         raise
     return f"/uploads/{category}/{filename}"
+
+
+def save_avatar_upload(file_storage, crop_x=50, crop_y=50, crop_zoom=100):
+    url = save_upload(file_storage, "avatars")
+    parts = url.strip("/").split("/")
+    source_path = safe_upload_path(parts[1], parts[2])
+    output_path = source_path.with_name(f"{uuid.uuid4().hex}.webp")
+    try:
+        with Image.open(source_path) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+        x = _bounded_float(crop_x, 50, 0, 100)
+        y = _bounded_float(crop_y, 50, 0, 100)
+        zoom = _bounded_float(crop_zoom, 100, 100, 300) / 100
+        side = max(1, int(min(image.size) / zoom))
+        left = round((image.width - side) * x / 100)
+        top = round((image.height - side) * y / 100)
+        avatar = image.crop((left, top, left + side, top + side))
+        avatar.resize((512, 512), Image.Resampling.LANCZOS).save(output_path, "WEBP", quality=85, method=6)
+    except Exception as exc:
+        source_path.unlink(missing_ok=True)
+        output_path.unlink(missing_ok=True)
+        raise UploadError("头像裁剪失败，请换一张图片重试。") from exc
+    source_path.unlink(missing_ok=True)
+    return f"/uploads/avatars/{output_path.name}"
+
+
+def _bounded_float(value, default, minimum, maximum):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    if not math.isfinite(number):
+        number = default
+    return max(minimum, min(maximum, number))
 
 
 def save_many(files, category, required=False):

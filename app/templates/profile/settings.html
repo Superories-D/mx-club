@@ -7,10 +7,46 @@
   <form class="panel form-stack" method="post" enctype="multipart/form-data">
     {{ csrf_field() }}
     <input type="hidden" name="action" value="profile">
-    <label>头像<input type="file" name="avatar" accept="image/*"></label>
+    <div class="avatar-settings">
+      <img class="avatar-preview" data-avatar-current src="{{ current_user.avatar_url or site_settings.default_avatar }}" alt="当前头像">
+      <div class="form-stack">
+        <label>上传头像<input data-avatar-input type="file" name="avatar" accept="image/jpeg,image/png,image/webp"></label>
+        <div class="avatar-crop-editor" data-avatar-crop hidden>
+          <canvas data-avatar-canvas width="512" height="512"></canvas>
+          <label>横向位置<input data-avatar-x type="range" name="avatar_crop_x" min="0" max="100" value="50"></label>
+          <label>纵向位置<input data-avatar-y type="range" name="avatar_crop_y" min="0" max="100" value="50"></label>
+          <label>缩放<input data-avatar-zoom type="range" name="avatar_crop_zoom" min="100" max="300" value="100"></label>
+        </div>
+      </div>
+    </div>
+    <fieldset class="preset-avatar-picker">
+      <legend>预设头像</legend>
+      <div class="preset-avatar-grid">
+        {% for avatar_url in avatar_presets %}
+          <label>
+            <input type="radio" name="avatar_preset" value="{{ avatar_url }}" {% if current_user.avatar_url == avatar_url %}checked{% endif %}>
+            <img src="{{ avatar_url }}" alt="预设头像 {{ loop.index }}">
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
     <label>昵称 / 用户名<input name="username" value="{{ current_user.username }}" required></label>
     <label>简介<textarea name="bio" rows="4">{{ current_user.bio }}</textarea></label>
     <label>联系方式<input name="contact" value="{{ current_user.contact }}"></label>
+    <div class="two-col">
+      <label>新作品默认可见度
+        <select name="default_post_visibility">
+          <option value="public" {% if current_user.default_post_visibility|default('public') == 'public' %}selected{% endif %}>所有人可见</option>
+          <option value="private" {% if current_user.default_post_visibility == 'private' %}selected{% endif %}>仅自己可见</option>
+          <option value="followers" {% if current_user.default_post_visibility == 'followers' %}selected{% endif %}>关注后可见</option>
+        </select>
+      </label>
+      <label>默认等待天数
+        <select name="default_follow_delay_days">
+          {% for day in range(0, 8) %}<option value="{{ day }}" {% if current_user.default_follow_delay_days|default(0) == day %}selected{% endif %}>{{ day }} 天</option>{% endfor %}
+        </select>
+      </label>
+    </div>
     <button class="btn primary" type="submit">保存资料</button>
   </form>
   <form class="panel form-stack" method="post">

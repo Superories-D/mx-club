@@ -3,9 +3,13 @@
 {% block content %}
 <section class="section work-detail">
   <div class="work-gallery">
-    {% for image in post.images %}
-      <img src="{{ image }}" alt="{{ post.title }}">
-    {% endfor %}
+    {% if access.image_visible %}
+      {% for image in post.images %}
+        <img src="{{ image }}" alt="{{ post.title }}">
+      {% endfor %}
+    {% else %}
+      <div class="locked-media detail-lock"><strong>作品等待解锁</strong><span>{{ access.message }}</span></div>
+    {% endif %}
   </div>
   <aside class="work-side">
     <p class="eyebrow">{{ post.created_at|date }} · {{ post.view_count }} 次浏览</p>
@@ -25,14 +29,16 @@
     {% endif %}
     <div class="action-row">
       {% if current_user %}
-        <form method="post" action="{{ url_for('community.toggle_like', post_id=post._id) }}">{{ csrf_field() }}<button class="btn" type="submit">{{ '取消点赞' if liked else '点赞' }} {{ post.like_count }}</button></form>
-        <form method="post" action="{{ url_for('community.toggle_favorite', post_id=post._id) }}">{{ csrf_field() }}<button class="btn" type="submit">{{ '取消收藏' if favorited else '收藏' }} {{ post.favorite_count }}</button></form>
+        {% if access.image_visible %}
+          <form method="post" action="{{ url_for('community.toggle_like', post_id=post._id) }}">{{ csrf_field() }}<button class="btn" type="submit">{{ '取消点赞' if liked else '点赞' }} {{ post.like_count }}</button></form>
+          <form method="post" action="{{ url_for('community.toggle_favorite', post_id=post._id) }}">{{ csrf_field() }}<button class="btn" type="submit">{{ '取消收藏' if favorited else '收藏' }} {{ post.favorite_count }}</button></form>
+        {% endif %}
         {% if author and author._id != current_user._id %}
           <form method="post" action="{{ url_for('profile.toggle_follow', user_id=author._id) }}">{{ csrf_field() }}<button class="btn" type="submit">{{ '取消关注' if followed else '关注作者' }}</button></form>
         {% endif %}
       {% endif %}
     </div>
-    {% if current_user and current_user._id != post.author_id %}
+    {% if access.image_visible and current_user and current_user._id != post.author_id %}
       <details class="report-box">
         <summary>举报作品</summary>
         <form class="form-stack" method="post" action="{{ url_for('community.report_post', post_id=post._id) }}">
@@ -50,7 +56,7 @@
         </form>
       </details>
     {% endif %}
-    {% if current_user and (current_user._id == post.author_id or current_user.role in ['admin','super_admin']) %}
+    {% if current_user and (current_user._id == post.author_id or can(current_user, 'moderate_community')) %}
       <div class="action-row">
         <a class="btn" href="{{ url_for('community.edit_post', post_id=post._id) }}">编辑</a>
         <form method="post" action="{{ url_for('community.delete_post', post_id=post._id) }}" data-confirm="确认删除这篇作品？">{{ csrf_field() }}<button class="btn danger" type="submit">删除</button></form>
@@ -58,6 +64,7 @@
     {% endif %}
   </aside>
 </section>
+{% if access.image_visible %}
 <section class="section narrow">
   <h2>评论</h2>
   {% if current_user %}
@@ -76,7 +83,7 @@
           <strong>{{ author.username if author else '未知用户' }}</strong>
           <p>{{ comment.content }}</p>
           <small>{{ comment.created_at|datetime }}</small>
-          {% if current_user and (current_user._id == comment.author_id or current_user.role in ['admin','super_admin']) %}
+          {% if current_user and (current_user._id == comment.author_id or can(current_user, 'moderate_community')) %}
             <form method="post" action="{{ url_for('community.delete_comment', comment_id=comment._id) }}">{{ csrf_field() }}<button class="link-danger" type="submit">删除</button></form>
           {% endif %}
           {% if current_user and current_user._id != comment.author_id %}
@@ -97,4 +104,5 @@
     {% endfor %}
   </div>
 </section>
+{% endif %}
 {% endblock %}

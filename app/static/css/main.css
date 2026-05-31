@@ -181,6 +181,20 @@ h3 { font-size: 1.05rem; }
 .content-card img { width: 100%; aspect-ratio: 5 / 3.4; object-fit: cover; }
 .content-card h3, .content-card p, .content-card small { padding: 0 1rem; }
 .content-card h3 { margin-top: .9rem; }
+.locked-media {
+  min-height: 190px;
+  aspect-ratio: 4 / 3;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: .35rem;
+  padding: 1rem;
+  color: #526150;
+  text-align: center;
+  background: rgba(127,146,124,.14);
+}
+.locked-media span { color: var(--muted); font-size: .9rem; }
+.detail-lock { min-height: min(62vh, 620px); border: 1px dashed var(--line); border-radius: 8px; }
 
 .tag-row { display: flex; gap: .4rem; flex-wrap: wrap; color: var(--sage); font-size: .9rem; }
 .badge {
@@ -298,6 +312,17 @@ textarea { resize: vertical; }
 
 .thumb-row { display: flex; gap: .75rem; flex-wrap: wrap; }
 .thumb-row img { width: 110px; height: 82px; border-radius: 8px; object-fit: cover; }
+.avatar-settings { display: grid; grid-template-columns: 132px 1fr; gap: 1rem; align-items: start; }
+.avatar-preview { width: 132px; height: 132px; object-fit: cover; border-radius: 50%; box-shadow: var(--shadow); }
+.avatar-crop-editor { display: grid; gap: .55rem; }
+.avatar-crop-editor canvas { width: min(240px, 100%); aspect-ratio: 1 / 1; border-radius: 8px; background: var(--soft); }
+.preset-avatar-picker { margin: 0; border: 1px solid var(--line); border-radius: 8px; padding: .75rem; }
+.preset-avatar-picker legend { padding: 0 .35rem; font-weight: 700; }
+.preset-avatar-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .55rem; }
+.preset-avatar-grid label { position: relative; cursor: pointer; }
+.preset-avatar-grid input { position: absolute; top: .35rem; left: .35rem; width: auto; accent-color: var(--theme); }
+.preset-avatar-grid img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border: 2px solid transparent; border-radius: 50%; }
+.preset-avatar-grid input:checked + img { border-color: var(--theme); box-shadow: 0 0 0 3px rgba(184,137,79,.18); }
 .standalone-photo { width: 100%; border-radius: 8px; margin: 0 0 1rem; box-shadow: var(--shadow); break-inside: avoid; }
 .preview-wide { width: min(520px, 100%); border-radius: 8px; }
 
@@ -388,4 +413,6 @@ th { background: #f7f8f4; color: #555b57; font-size: .9rem; }
   .section, .warm-band { width: min(100% - 1rem, 1180px); }
   .panel, .auth-card { padding: 1rem; }
   .asset-row { grid-template-columns: 1fr; }
+  .avatar-settings { grid-template-columns: 1fr; }
+  .preset-avatar-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }

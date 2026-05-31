@@ -63,6 +63,8 @@ def register():
             "contact": contact,
             "avatar_url": "",
             "bio": "",
+            "default_post_visibility": "public",
+            "default_follow_delay_days": 0,
             "role": "user",
             "permissions": [],
             "status": "active",

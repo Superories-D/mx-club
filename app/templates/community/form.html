@@ -20,6 +20,22 @@
       <label>拍摄地点<input name="location" value="{{ post.location if post else '' }}"></label>
       <label>拍摄时间<input name="shoot_time" value="{{ post.shoot_time if post else '' }}" placeholder="2026-05-31"></label>
     </div>
+    {% set selected_visibility = post.visibility|default('public') if post else current_user.default_post_visibility|default('public') %}
+    {% set selected_delay = post.follow_delay_days|default(0) if post else current_user.default_follow_delay_days|default(0) %}
+    <div class="two-col">
+      <label>作品可见度
+        <select name="visibility">
+          <option value="public" {% if selected_visibility == 'public' %}selected{% endif %}>所有人可见</option>
+          <option value="private" {% if selected_visibility == 'private' %}selected{% endif %}>仅自己可见</option>
+          <option value="followers" {% if selected_visibility == 'followers' %}selected{% endif %}>关注后可见</option>
+        </select>
+      </label>
+      <label>关注等待天数
+        <select name="follow_delay_days">
+          {% for day in range(0, 8) %}<option value="{{ day }}" {% if selected_delay == day %}selected{% endif %}>{{ day }} 天</option>{% endfor %}
+        </select>
+      </label>
+    </div>
     <button class="btn primary" type="submit">保存作品</button>
   </form>
 </section>

@@ -1,7 +1,8 @@
-from flask import Blueprint, current_app, jsonify, render_template
+from flask import Blueprint, current_app, g, jsonify, render_template
 from pymongo.errors import PyMongoError
 
 from app.extensions import mongo
+from app.utils.post_visibility import attach_post_access, visible_post_query
 
 bp = Blueprint("main", __name__)
 
@@ -14,8 +15,11 @@ def _author_map(posts):
 
 @bp.route("/")
 def index():
-    featured_posts = list(mongo.db.posts.find({"status": "normal"}).sort("like_count", -1).limit(6))
-    latest_posts = list(mongo.db.posts.find({"status": "normal"}).sort("created_at", -1).limit(8))
+    query = visible_post_query(getattr(g, "user", None))
+    featured_posts = list(mongo.db.posts.find(query).sort("like_count", -1).limit(6))
+    latest_posts = list(mongo.db.posts.find(query).sort("created_at", -1).limit(8))
+    attach_post_access(featured_posts, getattr(g, "user", None))
+    attach_post_access(latest_posts, getattr(g, "user", None))
     active_activities = list(
         mongo.db.activities.find({"status": {"$in": ["active", "showcased"]}}).sort("created_at", -1).limit(4)
     )

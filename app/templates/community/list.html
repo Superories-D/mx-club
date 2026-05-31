@@ -20,7 +20,11 @@
     {% for post in posts %}
       {% set author = authors.get(post.author_id) %}
       <a class="photo-card" href="{{ url_for('community.detail', post_id=post._id) }}">
-        <img src="{{ post.images[0] if post.images else site_settings.community_cover }}" alt="{{ post.title }}">
+        {% if post._access.image_visible %}
+          <img src="{{ post.images[0] if post.images else site_settings.community_cover }}" alt="{{ post.title }}">
+        {% else %}
+          <div class="locked-media"><strong>作品等待解锁</strong><span>{{ post._access.message }}</span></div>
+        {% endif %}
         <div>
           <h3>{{ post.title }}</h3>
           <p>{{ author.username if author else '未知作者' }} · {{ post.like_count }} 赞 · {{ post.favorite_count }} 收藏</p>

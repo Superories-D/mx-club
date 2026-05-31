@@ -178,6 +178,7 @@ install_docker() {
   fi
 
   local codename
+  # shellcheck disable=SC1091
   codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME}")"
   local arch
   arch="$(dpkg --print-architecture)"

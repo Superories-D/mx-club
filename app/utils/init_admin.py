@@ -37,6 +37,8 @@ def initialize_admin(app):
             "contact": "",
             "avatar_url": "",
             "bio": "",
+            "default_post_visibility": "public",
+            "default_follow_delay_days": 0,
             "role": "super_admin",
             "permissions": PERMISSION_KEYS,
             "status": "active",
