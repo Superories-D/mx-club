@@ -4,6 +4,7 @@
 <section class="section narrow">
   <p class="eyebrow">Settings</p>
   <h1>个人资料设置</h1>
+
   <form class="panel form-stack" method="post" enctype="multipart/form-data">
     {{ csrf_field() }}
     <input type="hidden" name="action" value="profile">
@@ -19,6 +20,7 @@
         </div>
       </div>
     </div>
+
     <fieldset class="preset-avatar-picker">
       <legend>预设头像</legend>
       <div class="preset-avatar-grid">
@@ -30,9 +32,11 @@
         {% endfor %}
       </div>
     </fieldset>
+
     <label>昵称 / 用户名<input name="username" value="{{ current_user.username }}" required></label>
     <label>简介<textarea name="bio" rows="4">{{ current_user.bio }}</textarea></label>
     <label>联系方式<input name="contact" value="{{ current_user.contact }}"></label>
+
     <div class="two-col">
       <label>新作品默认可见度
         <select name="default_post_visibility">
@@ -43,12 +47,32 @@
       </label>
       <label>默认等待天数
         <select name="default_follow_delay_days">
-          {% for day in range(0, 8) %}<option value="{{ day }}" {% if current_user.default_follow_delay_days|default(0) == day %}selected{% endif %}>{{ day }} 天</option>{% endfor %}
+          {% for day in range(0, 8) %}
+            <option value="{{ day }}" {% if current_user.default_follow_delay_days|default(0) == day %}selected{% endif %}>{{ day }} 天</option>
+          {% endfor %}
         </select>
       </label>
     </div>
+
+    <label>当前佩戴头衔
+      <select name="equipped_title_id">
+        <option value="">不佩戴</option>
+        {% for title in available_titles %}
+          <option value="{{ title._id }}" {% if current_equipped_title_id == (title._id ~ '') %}selected{% endif %}>{{ title.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    {% if current_user.role == 'super_admin' %}
+      <label class="check">
+        <input type="checkbox" name="allow_peer_super_admin_management" {% if current_user.allow_peer_super_admin_management %}checked{% endif %}>
+        <span>允许其他初始管理员管理我</span>
+      </label>
+    {% endif %}
+
     <button class="btn primary" type="submit">保存资料</button>
   </form>
+
   <form class="panel form-stack" method="post">
     {{ csrf_field() }}
     <input type="hidden" name="action" value="password">
@@ -57,6 +81,7 @@
     <label>新密码<input type="password" name="new_password" minlength="8" maxlength="128" required></label>
     <button class="btn" type="submit">修改密码</button>
   </form>
+
   <form class="panel form-stack danger-zone" method="post" data-confirm="确认注销账号？该操作会让账号无法继续登录。">
     {{ csrf_field() }}
     <input type="hidden" name="action" value="delete_account">

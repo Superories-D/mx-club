@@ -10,6 +10,7 @@ def create_indexes(db, logger=None):
         ("users", [("cohort_tag", ASCENDING)], {}),
         ("users", [("quality_photographer", ASCENDING)], {}),
         ("users", [("created_at", DESCENDING)], {}),
+        ("users", [("equipped_title_id", ASCENDING)], {}),
         ("invite_codes", [("code", ASCENDING)], {"unique": True}),
         ("invite_codes", [("used", ASCENDING)], {}),
         ("invite_codes", [("used_by", ASCENDING)], {}),
@@ -45,6 +46,9 @@ def create_indexes(db, logger=None):
         ("audit_logs", [("created_at", DESCENDING)], {}),
         ("site_settings", [("key", ASCENDING)], {"unique": True}),
         ("system_locks", [("key", ASCENDING)], {"unique": True}),
+        ("member_titles", [("name", ASCENDING)], {"unique": True}),
+        ("member_titles", [("is_active", ASCENDING)], {}),
+        ("member_titles", [("sort_order", ASCENDING)], {}),
         ("reports", [("target_type", ASCENDING), ("target_id", ASCENDING)], {}),
         ("reports", [("reporter_id", ASCENDING)], {}),
         (

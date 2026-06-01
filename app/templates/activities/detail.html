@@ -4,11 +4,12 @@
 <section class="activity-hero">
   <img src="{{ activity.cover_image or site_settings.activity_cover }}" alt="{{ activity.title }}">
   <div>
-    <p class="eyebrow">{{ activity.status }} · {{ activity.start_time or '即日起' }} - {{ activity.end_time or '长期' }}</p>
+    <p class="eyebrow">{{ activity.status }} | {{ activity.start_time or '即日起' }} - {{ activity.end_time or '长期' }}</p>
     <h1>{{ activity.title }}</h1>
     <p>{{ activity.intro }}</p>
   </div>
 </section>
+
 <section class="section detail-grid">
   <article class="panel prose">
     <h2>征集要求</h2>
@@ -16,13 +17,21 @@
     <h2>上传说明</h2>
     <p class="pre-line">{{ activity.upload_instructions }}</p>
     {% if activity.sample_images %}
-      <h2>样本图片</h2>
-      <div class="thumb-row">{% for image in activity.sample_images %}<img src="{{ image }}" alt="样本图片">{% endfor %}</div>
+      <h2>样图</h2>
+      <div class="thumb-row">{% for image in activity.sample_images %}<img src="{{ image }}" alt="样图">{% endfor %}</div>
     {% endif %}
   </article>
   <aside class="panel">
-    <h2>提交投稿</h2>
-    {% if current_user and activity.status in ['active','showcased'] %}
+    <div class="section-head tight">
+      <h2>提交投稿</h2>
+      {% if current_user and can(current_user, 'review_submissions') %}
+        <div class="action-row">
+          <a class="btn small" href="{{ url_for('admin.download_submissions', activity_id=activity._id, mode='all') }}">下载全部投稿</a>
+          <a class="btn small" href="{{ url_for('admin.download_submissions', activity_id=activity._id, mode='selected') }}">下载入选投稿</a>
+        </div>
+      {% endif %}
+    </div>
+    {% if current_user and activity.status in ['active', 'showcased'] %}
       <form class="form-stack" method="post" enctype="multipart/form-data" action="{{ url_for('activities.submit', activity_id=activity._id) }}">
         {{ csrf_field() }}
         <label>投稿图片<input type="file" name="images" accept="image/*" multiple required></label>
@@ -40,6 +49,7 @@
     {% endif %}
   </aside>
 </section>
+
 <section class="section">
   <div class="section-head">
     <h2>已入选作品</h2>

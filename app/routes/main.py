@@ -3,13 +3,15 @@ from pymongo.errors import PyMongoError
 
 from app.extensions import mongo
 from app.utils.post_visibility import attach_post_access, visible_post_query
+from app.utils.titles import attach_equipped_titles
 
 bp = Blueprint("main", __name__)
 
 
 def _author_map(posts):
     user_ids = list({post.get("author_id") for post in posts if post.get("author_id")})
-    users = mongo.db.users.find({"_id": {"$in": user_ids}})
+    users = list(mongo.db.users.find({"_id": {"$in": user_ids}}))
+    attach_equipped_titles(users, mongo.db)
     return {user["_id"]: user for user in users}
 
 

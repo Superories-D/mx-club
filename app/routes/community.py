@@ -16,6 +16,7 @@ from app.utils.post_visibility import (
 )
 from app.utils.rate_limit import consume_rate_limit
 from app.utils.security import now, parse_int, safe_redirect_url, to_object_id
+from app.utils.titles import attach_equipped_titles
 from app.utils.validation import ValidationError, clean_text
 
 bp = Blueprint("community", __name__, url_prefix="/community")
@@ -36,7 +37,9 @@ def _post_query():
 
 def _author_map(posts):
     ids = list({post.get("author_id") for post in posts if post.get("author_id")})
-    return {user["_id"]: user for user in mongo.db.users.find({"_id": {"$in": ids}})}
+    users = list(mongo.db.users.find({"_id": {"$in": ids}}))
+    attach_equipped_titles(users, mongo.db)
+    return {user["_id"]: user for user in users}
 
 
 def _post_fields():
@@ -157,6 +160,7 @@ def detail(post_id):
     mongo.db.posts.update_one({"_id": post["_id"]}, {"$inc": {"view_count": 1}})
     post["view_count"] = post.get("view_count", 0) + 1
     author = mongo.db.users.find_one({"_id": post["author_id"]})
+    attach_equipped_titles([author], mongo.db)
     comments = []
     if access["image_visible"]:
         comments = list(mongo.db.comments.find({"post_id": post["_id"], "status": "normal"}).sort("created_at", -1).limit(300))

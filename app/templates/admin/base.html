@@ -5,6 +5,7 @@
     <h2>后台管理</h2>
     <a href="{{ url_for('admin.dashboard') }}">仪表盘</a>
     {% if can(current_user, 'manage_users') %}<a href="{{ url_for('admin.users') }}">用户管理</a>{% endif %}
+    {% if can(current_user, 'manage_users') %}<a href="{{ url_for('admin.member_titles') }}">头衔管理</a>{% endif %}
     {% if can(current_user, 'manage_invites') %}<a href="{{ url_for('admin.invites') }}">注册表管理</a>{% endif %}
     {% if can(current_user, 'moderate_community') %}<a href="{{ url_for('admin.posts') }}">社区内容</a>{% endif %}
     {% if can(current_user, 'moderate_community') %}<a href="{{ url_for('admin.comments') }}">评论管理</a>{% endif %}

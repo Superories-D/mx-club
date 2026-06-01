@@ -74,8 +74,10 @@ def mask_contact(contact):
 def can_manage_user(actor, target):
     if not actor or not target:
         return False
-    if target.get("role") == "super_admin":
+    if actor.get("_id") == target.get("_id"):
         return False
+    if target.get("role") == "super_admin":
+        return actor.get("role") == "super_admin" and target.get("allow_peer_super_admin_management") is True
     if actor.get("role") == "super_admin":
         return True
     if actor.get("role") == "admin" and target.get("role") == "user":

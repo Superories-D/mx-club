@@ -13,7 +13,7 @@ document.addEventListener("click", function (event) {
   }
 });
 
-document.addEventListener("DOMContentLoaded", function () {
+function initAvatarEditor() {
   const fileInput = document.querySelector("[data-avatar-input]");
   const cropEditor = document.querySelector("[data-avatar-crop]");
   const canvas = document.querySelector("[data-avatar-canvas]");
@@ -74,4 +74,31 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
   });
+}
+
+function initAdminRoleToggle() {
+  const roleSelect = document.querySelector("[data-admin-role]");
+  if (!roleSelect) {
+    return;
+  }
+  const permissions = document.querySelector("[data-admin-permissions]");
+  const peerField = document.querySelector("[data-peer-super-admin-field]");
+
+  function syncAdminRoleFields() {
+    const isSuperAdmin = roleSelect.value === "super_admin";
+    if (permissions) {
+      permissions.hidden = isSuperAdmin;
+    }
+    if (peerField) {
+      peerField.hidden = !isSuperAdmin;
+    }
+  }
+
+  roleSelect.addEventListener("change", syncAdminRoleFields);
+  syncAdminRoleFields();
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  initAvatarEditor();
+  initAdminRoleToggle();
 });

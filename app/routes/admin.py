@@ -19,6 +19,7 @@ from app.utils.files import UploadError, delete_upload_url, safe_upload_path, sa
 from app.utils.permissions import PERMISSIONS, PERMISSION_KEYS, normalize_permissions
 from app.utils.security import can_manage_user, hash_password, now, parse_int, safe_redirect_url, to_object_id, verify_password
 from app.utils.storage import cleanup_deletable_files, mark_deletable_content, storage_summary
+from app.utils.titles import attach_equipped_titles, awarded_titles_for_user
 from app.utils.validation import ValidationError, clean_text, clean_theme_color, clean_username, validate_password
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -57,12 +58,37 @@ def _paginate(collection, query, sort=("created_at", -1), per_page=20):
 
 def _user_map(user_ids):
     ids = list({uid for uid in user_ids if uid})
-    return {user["_id"]: user for user in mongo.db.users.find({"_id": {"$in": ids}})}
+    users = list(mongo.db.users.find({"_id": {"$in": ids}}))
+    attach_equipped_titles(users, mongo.db)
+    return {user["_id"]: user for user in users}
 
 
 def _activity_map(activity_ids):
     ids = list({aid for aid in activity_ids if aid})
     return {item["_id"]: item for item in mongo.db.activities.find({"_id": {"$in": ids}})}
+
+
+def _member_titles(active_only=False):
+    query = {"is_active": True} if active_only else {}
+    return list(mongo.db.member_titles.find(query).sort([("sort_order", 1), ("name", 1), ("created_at", 1)]))
+
+
+def _decorate_managed_users(users):
+    for user in users:
+        user["_can_manage"] = can_manage_user(g.user, user)
+        user["_peer_super_admin_locked"] = user.get("role") == "super_admin" and not user.get(
+            "allow_peer_super_admin_management"
+        )
+    attach_equipped_titles(users, mongo.db)
+    return users
+
+
+def _role_permissions(role, submitted_permissions):
+    if role == "super_admin":
+        return PERMISSION_KEYS
+    if role == "admin":
+        return normalize_permissions(submitted_permissions)
+    return []
 
 
 @bp.route("/")
@@ -160,10 +186,12 @@ def users():
     elif quality == "no":
         query["quality_photographer"] = {"$ne": True}
     docs, page, total, per_page = _paginate(mongo.db.users, query, sort=("created_at", -1))
+    _decorate_managed_users(docs)
     cohorts = mongo.db.users.distinct("cohort_tag", {"cohort_tag": {"$nin": ["", None]}})
     return render_template(
         "admin/users.html",
         users=docs,
+        member_titles=_member_titles(active_only=True),
         page=page,
         total=total,
         per_page=per_page,
@@ -182,9 +210,17 @@ def user_detail(user_id):
     user = mongo.db.users.find_one({"_id": to_object_id(user_id)})
     if not user:
         abort(404)
+    _decorate_managed_users([user])
     posts = list(mongo.db.posts.find({"author_id": user["_id"]}).sort("created_at", -1).limit(20))
     submissions = list(mongo.db.submissions.find({"user_id": user["_id"]}).sort("created_at", -1).limit(20))
-    return render_template("admin/user_detail.html", target=user, posts=posts, submissions=submissions)
+    return render_template(
+        "admin/user_detail.html",
+        target=user,
+        posts=posts,
+        submissions=submissions,
+        member_titles=_member_titles(),
+        awarded_titles=awarded_titles_for_user(mongo.db, user),
+    )
 
 
 @bp.route("/users/create-admin", methods=["POST"])
@@ -196,6 +232,10 @@ def create_admin():
         contact = clean_text(request.form.get("contact"), "联系方式", 120)
     except ValidationError as exc:
         flash(str(exc), "danger")
+        return redirect(url_for("admin.users"))
+    role = request.form.get("role", "admin")
+    if role not in {"admin", "super_admin"}:
+        flash("角色类型不支持。", "danger")
         return redirect(url_for("admin.users"))
     password = _random_password()
     try:
@@ -209,12 +249,17 @@ def create_admin():
                 "bio": "",
                 "default_post_visibility": "public",
                 "default_follow_delay_days": 0,
-                "role": "admin",
-                "permissions": normalize_permissions(request.form.getlist("permissions")),
+                "role": role,
+                "permissions": _role_permissions(role, request.form.getlist("permissions")),
                 "status": "active",
                 "cohort_tag": "",
                 "quality_photographer": False,
                 "restricted_reason": "",
+                "allow_peer_super_admin_management": request.form.get("allow_peer_super_admin_management") == "on"
+                if role == "super_admin"
+                else False,
+                "awarded_title_ids": [],
+                "equipped_title_id": None,
                 "session_version": 0,
                 "must_change_password": True,
                 "created_at": now(),
@@ -222,8 +267,9 @@ def create_admin():
                 "last_login_at": None,
             }
         )
-        log_action("create_admin", "user", username, "创建管理员账号。")
-        flash(f"管理员已创建，初始密码：{password}", "success")
+        action = "create_super_admin" if role == "super_admin" else "create_admin"
+        log_action(action, "user", username, role)
+        flash(f"{role} 已创建，初始密码：{password}", "success")
     except DuplicateKeyError:
         flash("用户名已存在。", "danger")
     return redirect(url_for("admin.users"))
@@ -292,10 +338,15 @@ def user_action(user_id):
         update["status"] = "deleted"
     elif action == "role":
         role = request.form.get("role")
-        if g.user.get("role") != "super_admin" or role not in {"user", "admin"}:
+        if g.user.get("role") != "super_admin" or role not in {"user", "admin", "super_admin"}:
             abort(403)
+        previous_role = target.get("role")
         update["role"] = role
-        update["permissions"] = PERMISSION_KEYS if role == "admin" else []
+        update["permissions"] = _role_permissions(role, request.form.getlist("permissions"))
+        if role == "super_admin" and previous_role != "super_admin":
+            update.setdefault("allow_peer_super_admin_management", False)
+        if previous_role == "super_admin" and role != "super_admin":
+            update["allow_peer_super_admin_management"] = False
     else:
         abort(400)
     write_update = {"$set": update}
@@ -312,7 +363,9 @@ def user_action(user_id):
         }
         mongo.db.posts.update_many({"author_id": target["_id"], "storage_status": "deletable"}, protect_update)
         mongo.db.submissions.update_many({"user_id": target["_id"], "storage_status": "deletable"}, protect_update)
-    log_action(f"user_{action}", "user", target["_id"], target.get("username", ""))
+    if action == "role" and update.get("role") == "super_admin" and target.get("role") != "super_admin":
+        log_action("promote_super_admin", "user", target["_id"], target.get("username", ""))
+    log_action(f"user_{action}", "user", target["_id"], update.get("role", target.get("username", "")))
     flash("用户状态已更新。", "success")
     return redirect(safe_redirect_url(request.referrer, url_for("admin.users")))
 
@@ -345,6 +398,58 @@ def users_batch_status():
     return redirect(url_for("admin.users", cohort_tag=cohort_tag))
 
 
+@bp.route("/users/batch-award-title", methods=["POST"])
+@permission_required("manage_users")
+def users_batch_award_title():
+    cohort_tag = _validated_text(request.form.get("cohort_tag"), "用户标签/届别", 40, required=True)
+    title = mongo.db.member_titles.find_one({"_id": to_object_id(request.form.get("title_id")), "is_active": True})
+    if not title:
+        flash("头衔不存在或已停用。", "danger")
+        return redirect(url_for("admin.users", cohort_tag=cohort_tag))
+    result = mongo.db.users.update_many(
+        {
+            "cohort_tag": cohort_tag,
+            "role": {"$in": ["user", "admin"]},
+            "status": {"$ne": "deleted"},
+            "awarded_title_ids": {"$ne": title["_id"]},
+        },
+        {
+            "$addToSet": {"awarded_title_ids": title["_id"]},
+            "$set": {"updated_at": now()},
+        },
+    )
+    log_action("batch_award_title", "member_title", title["_id"], f"{cohort_tag}:{result.modified_count}")
+    flash(f"已向 {result.modified_count} 个成员授予头衔：{title['name']}。", "success")
+    return redirect(url_for("admin.users", cohort_tag=cohort_tag))
+
+
+@bp.route("/users/<user_id>/award-title", methods=["POST"])
+@permission_required("manage_users")
+def award_title(user_id):
+    target = mongo.db.users.find_one({"_id": to_object_id(user_id)})
+    if not target:
+        abort(404)
+    if not can_manage_user(g.user, target):
+        abort(403)
+    title = mongo.db.member_titles.find_one({"_id": to_object_id(request.form.get("title_id")), "is_active": True})
+    if not title:
+        flash("头衔不存在或已停用。", "danger")
+        return redirect(url_for("admin.user_detail", user_id=user_id))
+    result = mongo.db.users.update_one(
+        {"_id": target["_id"], "awarded_title_ids": {"$ne": title["_id"]}},
+        {
+            "$addToSet": {"awarded_title_ids": title["_id"]},
+            "$set": {"updated_at": now()},
+        },
+    )
+    if not result.modified_count:
+        flash(f"{target.get('username')} 已经拥有头衔：{title['name']}。", "info")
+        return redirect(url_for("admin.user_detail", user_id=user_id))
+    log_action("award_title", "member_title", title["_id"], target.get("username", ""))
+    flash(f"已向 {target.get('username')} 授予头衔：{title['name']}。", "success")
+    return redirect(url_for("admin.user_detail", user_id=user_id))
+
+
 @bp.route("/users/<user_id>/reset-password", methods=["POST"])
 @permission_required("manage_users")
 def reset_password(user_id):
@@ -364,6 +469,81 @@ def reset_password(user_id):
     log_action("reset_password", "user", target["_id"], target.get("username", ""))
     flash(f"密码已重置，新密码：{password}", "success")
     return redirect(safe_redirect_url(request.referrer, url_for("admin.users")))
+
+
+@bp.route("/member-titles", methods=["GET", "POST"])
+@permission_required("manage_users")
+def member_titles():
+    if request.method == "POST":
+        try:
+            payload = {
+                "name": clean_text(request.form.get("name"), "头衔名称", 40, required=True),
+                "description": clean_text(request.form.get("description"), "头衔说明", 200),
+                "sort_order": parse_int(request.form.get("sort_order"), default=100, minimum=0, maximum=9999),
+                "is_active": True,
+                "created_by": g.user["_id"],
+                "created_at": now(),
+                "updated_at": now(),
+            }
+        except ValidationError as exc:
+            flash(str(exc), "danger")
+            return redirect(url_for("admin.member_titles"))
+        try:
+            mongo.db.member_titles.insert_one(payload)
+        except DuplicateKeyError:
+            flash("头衔名称已存在。", "danger")
+            return redirect(url_for("admin.member_titles"))
+        log_action("create_member_title", "member_title", payload["name"], "")
+        flash("头衔已创建。", "success")
+        return redirect(url_for("admin.member_titles"))
+    return render_template("admin/member_titles.html", titles=_member_titles())
+
+
+@bp.route("/member-titles/<title_id>/edit", methods=["POST"])
+@permission_required("manage_users")
+def edit_member_title(title_id):
+    title = mongo.db.member_titles.find_one({"_id": to_object_id(title_id)})
+    if not title:
+        abort(404)
+    try:
+        payload = {
+            "name": clean_text(request.form.get("name"), "头衔名称", 40, required=True),
+            "description": clean_text(request.form.get("description"), "头衔说明", 200),
+            "sort_order": parse_int(request.form.get("sort_order"), default=100, minimum=0, maximum=9999),
+            "updated_at": now(),
+        }
+    except ValidationError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin.member_titles"))
+    try:
+        mongo.db.member_titles.update_one({"_id": title["_id"]}, {"$set": payload})
+    except DuplicateKeyError:
+        flash("头衔名称已存在。", "danger")
+        return redirect(url_for("admin.member_titles"))
+    log_action("edit_member_title", "member_title", title["_id"], payload["name"])
+    flash("头衔已更新。", "success")
+    return redirect(url_for("admin.member_titles"))
+
+
+@bp.route("/member-titles/<title_id>/toggle", methods=["POST"])
+@permission_required("manage_users")
+def toggle_member_title(title_id):
+    title = mongo.db.member_titles.find_one({"_id": to_object_id(title_id)})
+    if not title:
+        abort(404)
+    is_active = not title.get("is_active", True)
+    mongo.db.member_titles.update_one(
+        {"_id": title["_id"]},
+        {"$set": {"is_active": is_active, "updated_at": now()}},
+    )
+    if not is_active:
+        mongo.db.users.update_many(
+            {"equipped_title_id": title["_id"]},
+            {"$set": {"equipped_title_id": None, "updated_at": now()}},
+        )
+    log_action("toggle_member_title", "member_title", title["_id"], "active" if is_active else "inactive")
+    flash("头衔状态已更新。", "success")
+    return redirect(url_for("admin.member_titles"))
 
 
 @bp.route("/invites")

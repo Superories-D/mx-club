@@ -2,16 +2,64 @@
 {% block title %}用户详情 - {{ site_settings.site_name }}{% endblock %}
 {% block admin_content %}
 <h1>{{ target.username }}</h1>
-<div class="panel">
+
+<div class="panel form-stack">
   <p>真实姓名：{{ target.real_name }}</p>
-  <p>完整联系方式：{{ target.contact }}</p>
-  <p>角色：{{ target.role }} · 状态：{{ target.status }}</p>
-  <p>用户标签/届别：{{ target.cohort_tag or '-' }} · 摄影等级：{{ '优质摄影' if target.quality_photographer else '普通用户' }}</p>
+  <p>完整联系方式：{{ target.contact or '-' }}</p>
+  <p>角色：{{ target.role }} | 状态：{{ target.status }}</p>
+  <p>用户标签/届别：{{ target.cohort_tag or '-' }} | 摄影等级：{{ '优质摄影' if target.quality_photographer else '普通用户' }}</p>
+  <p>允许同级初始管理员管理：{{ '是' if target.allow_peer_super_admin_management else '否' }}</p>
+  <p>
+    当前佩戴头衔：
+    {% if target._equipped_title %}
+      <span class="badge">{{ target._equipped_title.name }}</span>
+    {% else %}
+      <span class="muted">未佩戴</span>
+    {% endif %}
+  </p>
+  <p>
+    已获头衔：
+    {% for title in awarded_titles %}
+      <span class="badge">{{ title.name }}</span>
+    {% else %}
+      <span class="muted">暂无</span>
+    {% endfor %}
+  </p>
   {% if target.restricted_reason %}<p>暂停原因：{{ target.restricted_reason }}</p>{% endif %}
-  <p>创建时间：{{ target.created_at|datetime }} · 最近登录：{{ target.last_login_at|datetime }}</p>
+  <p>创建时间：{{ target.created_at|datetime }} | 最近登录：{{ target.last_login_at|datetime }}</p>
 </div>
-<div class="admin-columns">
-  <section class="panel"><h2>近期作品</h2>{% for post in posts %}<p><a href="{{ url_for('community.detail', post_id=post._id) }}">{{ post.title }}</a> · {{ post.status }}</p>{% else %}<p>暂无</p>{% endfor %}</section>
-  <section class="panel"><h2>近期投稿</h2>{% for sub in submissions %}<p>{{ sub.status }} · {{ sub.created_at|datetime }}</p>{% else %}<p>暂无</p>{% endfor %}</section>
+
+{% if member_titles and target._can_manage %}
+<form class="panel inline-form" method="post" action="{{ url_for('admin.award_title', user_id=target._id) }}">
+  {{ csrf_field() }}
+  <select name="title_id" required>
+    <option value="">选择头衔</option>
+    {% for title in member_titles %}
+      {% if title.is_active %}
+        <option value="{{ title._id }}">{{ title.name }}</option>
+      {% endif %}
+    {% endfor %}
+  </select>
+  <button class="btn primary" type="submit">颁发头衔</button>
+</form>
+{% endif %}
+
+<div class="admin-columns two-up">
+  <section class="panel">
+    <h2>近期作品</h2>
+    {% for post in posts %}
+      <p><a href="{{ url_for('community.detail', post_id=post._id) }}">{{ post.title }}</a> | {{ post.status }}</p>
+    {% else %}
+      <p>暂无</p>
+    {% endfor %}
+  </section>
+  <section class="panel">
+    <h2>近期投稿</h2>
+    {% for sub in submissions %}
+      <p>{{ sub.status }} | {{ sub.created_at|datetime }}</p>
+    {% else %}
+      <p>暂无</p>
+    {% endfor %}
+  </section>
 </div>
 {% endblock %}

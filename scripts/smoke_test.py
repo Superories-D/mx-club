@@ -52,6 +52,11 @@ def main():
         client.get("/")
         return client.post("/logout", data={"_csrf_token": csrf_token()}, follow_redirects=True)
 
+    def login_as_session(user):
+        with client.session_transaction() as sess:
+            sess["user_id"] = str(user["_id"])
+            sess["session_version"] = user.get("session_version", 0)
+
     def check(name, condition):
         results.append((name, bool(condition)))
         print(("PASS" if condition else "FAIL"), name)
@@ -67,11 +72,11 @@ def main():
             check("super_admin must change password", admin and admin.get("must_change_password") is True)
             mongo.db.users.update_one({"_id": admin["_id"]}, {"$set": {"must_change_password": False}})
 
-        with client.session_transaction() as sess:
-            sess["user_id"] = str(admin["_id"])
+        login_as_session(admin)
         for path in [
             "/admin/",
             "/admin/users",
+            "/admin/member-titles",
             "/admin/invites",
             "/admin/posts",
             "/admin/comments",
@@ -84,6 +89,54 @@ def main():
         ]:
             response = client.get(path)
             check(f"ADMIN {path}", response.status_code == 200)
+
+        response = client.post(
+            "/admin/users/create-admin",
+            data={
+                "_csrf_token": csrf_token(),
+                "username": "ops_admin",
+                "real_name": "运营管理员",
+                "contact": "ops@example.com",
+                "role": "admin",
+                "permissions": ["manage_users", "review_submissions"],
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            ops_admin = mongo.db.users.find_one({"username": "ops_admin"})
+        check("create ordinary admin", response.status_code == 200 and ops_admin and ops_admin.get("role") == "admin")
+
+        response = client.post(
+            "/admin/users/create-admin",
+            data={
+                "_csrf_token": csrf_token(),
+                "username": "peer_root",
+                "real_name": "同级管理员",
+                "contact": "peer@example.com",
+                "role": "super_admin",
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            peer_root = mongo.db.users.find_one({"username": "peer_root"})
+            mongo.db.users.update_one({"_id": peer_root["_id"]}, {"$set": {"must_change_password": False}})
+            peer_root = mongo.db.users.find_one({"_id": peer_root["_id"]})
+        check(
+            "create peer super admin",
+            response.status_code == 200
+            and peer_root
+            and peer_root.get("role") == "super_admin"
+            and peer_root.get("allow_peer_super_admin_management") is False,
+        )
+
+        response = client.post(
+            "/admin/member-titles",
+            data={"_csrf_token": csrf_token(), "name": "校园光影记录者", "description": "冒烟测试头衔", "sort_order": "10"},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            smoke_title = mongo.db.member_titles.find_one({"name": "校园光影记录者"})
+        check("create member title", response.status_code == 200 and smoke_title is not None)
 
         client.get("/admin/invites")
         response = client.post(
@@ -150,6 +203,34 @@ def main():
             smoke_user = mongo.db.users.find_one({"username": "smoke_user"})
         check("register invited user", response.status_code == 200 and smoke_user is not None)
         check("invite cohort copied to user", smoke_user and smoke_user.get("cohort_tag") == "2026届")
+        with app.app_context():
+            cohort_peer_id = mongo.db.users.insert_one(
+                {
+                    "real_name": "批量头衔成员",
+                    "username": "title_batch_user",
+                    "password_hash": hash_password("secret123"),
+                    "contact": "",
+                    "avatar_url": "",
+                    "bio": "",
+                    "default_post_visibility": "public",
+                    "default_follow_delay_days": 0,
+                    "role": "user",
+                    "permissions": [],
+                    "status": "active",
+                    "cohort_tag": "2026届",
+                    "quality_photographer": False,
+                    "restricted_reason": "",
+                    "allow_peer_super_admin_management": False,
+                    "awarded_title_ids": [],
+                    "equipped_title_id": None,
+                    "must_change_password": False,
+                    "session_version": 0,
+                    "created_at": now(),
+                    "updated_at": now(),
+                    "last_login_at": None,
+                }
+            ).inserted_id
+            cohort_peer = mongo.db.users.find_one({"_id": cohort_peer_id})
 
         client.get("/login")
         response = client.post(
@@ -259,6 +340,131 @@ def main():
         check("review submission", response.status_code == 200)
         response = client.get(f"/admin/activities/{activity['_id']}/download?mode=selected")
         check("download selected zip", response.status_code == 200 and response.mimetype == "application/zip")
+        response = client.get(f"/activities/{activity['_id']}")
+        check(
+            "activity detail shows admin download shortcuts",
+            response.status_code == 200
+            and f"/admin/activities/{activity['_id']}/download?mode=all".encode("utf-8") in response.data
+            and f"/admin/activities/{activity['_id']}/download?mode=selected".encode("utf-8") in response.data,
+        )
+        logout()
+        anonymous_activity = client.get(f"/activities/{activity['_id']}")
+        check(
+            "activity detail hides admin download shortcuts from anonymous",
+            anonymous_activity.status_code == 200
+            and f"/admin/activities/{activity['_id']}/download?mode=all".encode("utf-8") not in anonymous_activity.data,
+        )
+        login_as_session(admin)
+
+        response = client.post(
+            f"/admin/users/{smoke_user['_id']}/award-title",
+            data={"_csrf_token": csrf_token(), "title_id": str(smoke_title["_id"])},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            smoke_user = mongo.db.users.find_one({"_id": smoke_user["_id"]})
+        check(
+            "award title to single user",
+            response.status_code == 200 and smoke_title["_id"] in smoke_user.get("awarded_title_ids", []),
+        )
+
+        response = client.post(
+            "/admin/users/batch-award-title",
+            data={"_csrf_token": csrf_token(), "cohort_tag": "2026届", "title_id": str(smoke_title["_id"])},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            cohort_peer = mongo.db.users.find_one({"_id": cohort_peer["_id"]})
+        check(
+            "batch award title by cohort",
+            response.status_code == 200 and smoke_title["_id"] in cohort_peer.get("awarded_title_ids", []),
+        )
+
+        response = client.post(
+            f"/admin/users/{ops_admin['_id']}/action",
+            data={"_csrf_token": csrf_token(), "action": "role", "role": "super_admin"},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            ops_admin = mongo.db.users.find_one({"_id": ops_admin["_id"]})
+        check("promote admin to super_admin", response.status_code == 200 and ops_admin.get("role") == "super_admin")
+
+        response = client.post(
+            f"/admin/users/{peer_root['_id']}/action",
+            data={"_csrf_token": csrf_token(), "action": "restrict"},
+            follow_redirects=False,
+        )
+        check("peer super_admin is protected by default", response.status_code == 403)
+
+        login_as_session(peer_root)
+        client.get("/profile/settings")
+        response = client.post(
+            "/profile/settings",
+            data={
+                "_csrf_token": csrf_token(),
+                "action": "profile",
+                "username": "peer_root",
+                "bio": "",
+                "contact": "peer@example.com",
+                "default_post_visibility": "public",
+                "default_follow_delay_days": "0",
+                "allow_peer_super_admin_management": "on",
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            peer_root = mongo.db.users.find_one({"_id": peer_root["_id"]})
+        check(
+            "peer super_admin can enable same-level management",
+            response.status_code == 200 and peer_root.get("allow_peer_super_admin_management") is True,
+        )
+
+        login_as_session(admin)
+        response = client.post(
+            f"/admin/users/{peer_root['_id']}/action",
+            data={"_csrf_token": csrf_token(), "action": "restrict", "restricted_reason": "peer-test"},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            peer_root = mongo.db.users.find_one({"_id": peer_root["_id"]})
+        check("peer super_admin becomes manageable after opt-in", response.status_code == 200 and peer_root.get("status") == "restricted")
+
+        logout()
+        client.get("/login")
+        client.post(
+            "/login",
+            data={"_csrf_token": csrf_token(), "username": "smoke_user", "password": "secret123"},
+            follow_redirects=True,
+        )
+        response = client.post(
+            "/profile/settings",
+            data={
+                "_csrf_token": csrf_token(),
+                "action": "profile",
+                "username": "smoke_user",
+                "bio": "",
+                "contact": "13812345678",
+                "default_post_visibility": "public",
+                "default_follow_delay_days": "0",
+                "equipped_title_id": str(smoke_title["_id"]),
+            },
+            follow_redirects=True,
+        )
+        profile_response = client.get(f"/users/{smoke_user['_id']}")
+        detail_response = client.get(f"/community/{post['_id']}")
+        with app.app_context():
+            smoke_user = mongo.db.users.find_one({"_id": smoke_user["_id"]})
+        check(
+            "member can equip awarded title",
+            response.status_code == 200 and smoke_user.get("equipped_title_id") == smoke_title["_id"],
+        )
+        check(
+            "equipped title renders on profile and post detail",
+            "校园光影记录者".encode("utf-8") in profile_response.data
+            and "校园光影记录者".encode("utf-8") in detail_response.data,
+        )
+
+        login_as_session(admin)
 
         response = client.post(
             f"/admin/users/{smoke_user['_id']}/action",
@@ -284,7 +490,12 @@ def main():
                     "status": "active",
                     "cohort_tag": "2025届",
                     "quality_photographer": False,
+                    "restricted_reason": "",
+                    "allow_peer_super_admin_management": False,
+                    "awarded_title_ids": [],
+                    "equipped_title_id": None,
                     "must_change_password": False,
+                    "session_version": 0,
                     "created_at": old_time,
                     "updated_at": old_time,
                     "last_login_at": None,
@@ -396,7 +607,12 @@ def main():
                     "status": "active",
                     "cohort_tag": "",
                     "quality_photographer": False,
+                    "restricted_reason": "",
+                    "allow_peer_super_admin_management": False,
+                    "awarded_title_ids": [],
+                    "equipped_title_id": None,
                     "must_change_password": False,
+                    "session_version": 0,
                     "created_at": now(),
                     "updated_at": now(),
                     "last_login_at": None,

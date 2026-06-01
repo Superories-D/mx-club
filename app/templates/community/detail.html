@@ -12,7 +12,7 @@
     {% endif %}
   </div>
   <aside class="work-side">
-    <p class="eyebrow">{{ post.created_at|date }} · {{ post.view_count }} 次浏览</p>
+    <p class="eyebrow">{{ post.created_at|date }} | {{ post.view_count }} 次浏览</p>
     <h1>{{ post.title }}</h1>
     <p>{{ post.description }}</p>
     <div class="tag-row">{% for tag in post.tags %}<a href="{{ url_for('community.list_posts', tag=tag) }}">#{{ tag }}</a>{% endfor %}</div>
@@ -24,7 +24,12 @@
     {% if author %}
       <a class="author-box" href="{{ url_for('profile.user_home', user_id=author._id) }}">
         <img src="{{ author.avatar_url or site_settings.default_avatar }}" alt="{{ author.username }}">
-        <span>{{ author.username }}</span>
+        <span class="author-meta">
+          <strong>{{ author.username }}</strong>
+          {% if author._equipped_title %}
+            <span class="badge">{{ author._equipped_title.name }}</span>
+          {% endif %}
+        </span>
       </a>
     {% endif %}
     <div class="action-row">
@@ -64,6 +69,7 @@
     {% endif %}
   </aside>
 </section>
+
 {% if access.image_visible %}
 <section class="section narrow">
   <h2>评论</h2>
@@ -80,7 +86,12 @@
       <article class="comment">
         <img src="{{ author.avatar_url if author and author.avatar_url else site_settings.default_avatar }}" alt="">
         <div>
-          <strong>{{ author.username if author else '未知用户' }}</strong>
+          <div class="nameplate compact">
+            <strong>{{ author.username if author else '未知用户' }}</strong>
+            {% if author and author._equipped_title %}
+              <span class="badge">{{ author._equipped_title.name }}</span>
+            {% endif %}
+          </div>
           <p>{{ comment.content }}</p>
           <small>{{ comment.created_at|datetime }}</small>
           {% if current_user and (current_user._id == comment.author_id or can(current_user, 'moderate_community')) %}

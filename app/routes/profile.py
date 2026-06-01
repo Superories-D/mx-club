@@ -3,11 +3,13 @@ from pymongo.errors import DuplicateKeyError
 
 from app.decorators import active_required, login_required
 from app.extensions import mongo
+from app.utils.audit import log_action
 from app.utils.avatar_presets import AVATAR_PRESETS, normalize_preset_avatar
 from app.utils.files import UploadError, delete_upload_url, save_avatar_upload
 from app.utils.post_visibility import attach_post_access, normalize_follow_delay_days, normalize_post_visibility
 from app.utils.rate_limit import consume_rate_limit
 from app.utils.security import hash_password, now, safe_redirect_url, to_object_id, verify_password
+from app.utils.titles import attach_equipped_titles, awarded_titles_for_user, normalize_equipped_title_id
 from app.utils.validation import ValidationError, clean_text, clean_username, validate_password
 
 bp = Blueprint("profile", __name__)
@@ -18,6 +20,7 @@ def user_home(user_id):
     user = mongo.db.users.find_one({"_id": to_object_id(user_id), "status": {"$ne": "deleted"}})
     if not user:
         abort(404)
+    attach_equipped_titles([user], mongo.db)
     posts = list(mongo.db.posts.find({"author_id": user["_id"], "status": "normal"}).sort("created_at", -1).limit(120))
     posts = [post for post in attach_post_access(posts, getattr(g, "user", None)) if post["_access"]["list_visible"]]
     follower_count = mongo.db.follows.count_documents({"following_id": user["_id"]})
@@ -41,6 +44,11 @@ def user_home(user_id):
 @bp.route("/profile/settings", methods=["GET", "POST"])
 @login_required
 def settings():
+    available_titles = awarded_titles_for_user(mongo.db, g.user, active_only=True)
+    active_title_ids = {str(title["_id"]) for title in available_titles}
+    current_equipped_title_id = str(g.user.get("equipped_title_id") or "")
+    if current_equipped_title_id not in active_title_ids:
+        current_equipped_title_id = ""
     if request.method == "POST":
         action = request.form.get("action", "profile")
         if action == "profile":
@@ -51,8 +59,11 @@ def settings():
                     "contact": clean_text(request.form.get("contact"), "联系方式", 120),
                     "default_post_visibility": normalize_post_visibility(request.form.get("default_post_visibility")),
                     "default_follow_delay_days": normalize_follow_delay_days(request.form.get("default_follow_delay_days")),
+                    "equipped_title_id": normalize_equipped_title_id(mongo.db, g.user, request.form.get("equipped_title_id")),
                     "updated_at": now(),
                 }
+                if g.user.get("role") == "super_admin":
+                    update["allow_peer_super_admin_management"] = request.form.get("allow_peer_super_admin_management") == "on"
                 avatar_preset = normalize_preset_avatar(request.form.get("avatar_preset"))
             except ValidationError as exc:
                 flash(str(exc), "danger")
@@ -80,6 +91,17 @@ def settings():
                 mongo.db.users.update_one({"_id": g.user["_id"]}, {"$set": update})
                 if update.get("avatar_url") and g.user.get("avatar_url") != update["avatar_url"]:
                     delete_upload_url(g.user.get("avatar_url"))
+                if (
+                    g.user.get("role") == "super_admin"
+                    and g.user.get("allow_peer_super_admin_management", False)
+                    != update.get("allow_peer_super_admin_management", False)
+                ):
+                    log_action(
+                        "update_peer_super_admin_management",
+                        "user",
+                        g.user["_id"],
+                        "enabled" if update.get("allow_peer_super_admin_management") else "disabled",
+                    )
                 flash("资料已更新。", "success")
             except DuplicateKeyError:
                 delete_upload_url(update.get("avatar_url"))
@@ -122,7 +144,12 @@ def settings():
         else:
             abort(400)
         return redirect(url_for("profile.settings"))
-    return render_template("profile/settings.html", avatar_presets=AVATAR_PRESETS)
+    return render_template(
+        "profile/settings.html",
+        avatar_presets=AVATAR_PRESETS,
+        available_titles=available_titles,
+        current_equipped_title_id=current_equipped_title_id,
+    )
 
 
 @bp.route("/users/<user_id>/follow", methods=["POST"])

@@ -1,0 +1,60 @@
+{% extends "admin/base.html" %}
+{% block title %}头衔管理 - {{ site_settings.site_name }}{% endblock %}
+{% block admin_content %}
+<div class="section-head">
+  <h1>头衔管理</h1>
+</div>
+
+<form class="panel form-stack" method="post" action="{{ url_for('admin.member_titles') }}">
+  {{ csrf_field() }}
+  <div class="three-col">
+    <label>头衔名称<input name="name" maxlength="40" required></label>
+    <label>排序权重<input name="sort_order" type="number" min="0" max="9999" value="100"></label>
+    <label>头衔说明<input name="description" maxlength="200"></label>
+  </div>
+  <button class="btn primary" type="submit">创建头衔</button>
+</form>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>名称</th>
+        <th>说明</th>
+        <th>排序</th>
+        <th>状态</th>
+        <th>创建时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for title in titles %}
+      <tr>
+        <td><span class="badge">{{ title.name }}</span></td>
+        <td>{{ title.description or '-' }}</td>
+        <td>{{ title.sort_order }}</td>
+        <td><span class="badge">{{ 'active' if title.is_active else 'inactive' }}</span></td>
+        <td>{{ title.created_at|datetime }}</td>
+        <td class="actions">
+          <form class="inline-form" method="post" action="{{ url_for('admin.edit_member_title', title_id=title._id) }}">
+            {{ csrf_field() }}
+            <input name="name" value="{{ title.name }}" maxlength="40" required>
+            <input name="description" value="{{ title.description }}" maxlength="200">
+            <input name="sort_order" type="number" min="0" max="9999" value="{{ title.sort_order|default(100) }}">
+            <button class="btn small" type="submit">保存</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.toggle_member_title', title_id=title._id) }}">
+            {{ csrf_field() }}
+            <button class="btn small" type="submit">{{ '停用' if title.is_active else '启用' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6"><span class="muted">还没有头衔。</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

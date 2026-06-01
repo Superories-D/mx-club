@@ -23,6 +23,7 @@ from app import create_app  # noqa: E402
 from app.config import Config  # noqa: E402
 from app.db_indexes import create_indexes  # noqa: E402
 from app.extensions import mongo  # noqa: E402
+from app.utils.permissions import PERMISSION_KEYS  # noqa: E402
 from app.utils.security import hash_password, now  # noqa: E402
 
 
@@ -44,6 +45,7 @@ def main():
     admin_client = app.test_client()
     user_client = app.test_client()
     anonymous_client = app.test_client()
+    peer_super_client = app.test_client()
     results = []
 
     def check(name, condition):
@@ -68,12 +70,17 @@ def main():
             "contact": "13812345678",
             "avatar_url": "",
             "bio": "",
+            "default_post_visibility": "public",
+            "default_follow_delay_days": 0,
             "role": role,
             "permissions": permissions or [],
             "status": "active",
             "cohort_tag": "安全测试",
             "quality_photographer": False,
             "restricted_reason": "",
+            "allow_peer_super_admin_management": False,
+            "awarded_title_ids": [],
+            "equipped_title_id": None,
             "session_version": 0,
             "must_change_password": False,
             "created_at": now(),
@@ -92,9 +99,14 @@ def main():
             limited = mongo.db.users.find_one({"_id": limited_id})
             peer_id = mongo.db.users.insert_one(user_doc("peer_manager", "admin", ["manage_settings"])).inserted_id
             peer = mongo.db.users.find_one({"_id": peer_id})
+            peer_super_id = mongo.db.users.insert_one(
+                {**user_doc("peer_super_admin", "super_admin", PERMISSION_KEYS), "allow_peer_super_admin_management": False}
+            ).inserted_id
+            peer_super_admin = mongo.db.users.find_one({"_id": peer_super_id})
 
         login_as(admin_client, admin)
         login_as(user_client, user)
+        login_as(peer_super_client, peer_super_admin)
 
         response = anonymous_client.get("/")
         check("security headers include CSP", "default-src 'self'" in response.headers.get("Content-Security-Policy", ""))
@@ -400,6 +412,96 @@ def main():
             follow_redirects=False,
         )
         check("ordinary admin cannot reset peer admin password", response.status_code == 403)
+
+        response = admin_client.post(
+            f"/admin/users/{peer_super_admin['_id']}/reset-password",
+            data={"_csrf_token": csrf(admin_client)},
+            follow_redirects=False,
+        )
+        check("super_admin cannot reset peer super_admin before opt-in", response.status_code == 403)
+
+        response = admin_client.post(
+            f"/admin/users/{peer_super_admin['_id']}/action",
+            data={"_csrf_token": csrf(admin_client), "action": "restrict"},
+            follow_redirects=False,
+        )
+        check("super_admin cannot restrict peer super_admin before opt-in", response.status_code == 403)
+
+        response = peer_super_client.post(
+            "/profile/settings",
+            data={
+                "_csrf_token": csrf(peer_super_client),
+                "action": "profile",
+                "username": "peer_super_admin",
+                "bio": "",
+                "contact": "13812345678",
+                "default_post_visibility": "public",
+                "default_follow_delay_days": "0",
+                "allow_peer_super_admin_management": "on",
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            peer_super_admin = mongo.db.users.find_one({"_id": peer_super_admin["_id"]})
+        check(
+            "peer super_admin can opt in to same-level management",
+            response.status_code == 200 and peer_super_admin.get("allow_peer_super_admin_management") is True,
+        )
+
+        response = admin_client.post(
+            f"/admin/users/{peer_super_admin['_id']}/action",
+            data={"_csrf_token": csrf(admin_client), "action": "restrict", "restricted_reason": "peer-test"},
+            follow_redirects=True,
+        )
+        with app.app_context():
+            peer_super_admin = mongo.db.users.find_one({"_id": peer_super_admin["_id"]})
+        check(
+            "super_admin can manage opted-in peer super_admin",
+            response.status_code == 200 and peer_super_admin.get("status") == "restricted",
+        )
+
+        response = limited_client.post(
+            f"/admin/users/{peer_super_admin['_id']}/reset-password",
+            data={"_csrf_token": csrf(limited_client)},
+            follow_redirects=False,
+        )
+        check("ordinary admin still cannot reset opted-in super_admin password", response.status_code == 403)
+
+        with app.app_context():
+            title_id = mongo.db.member_titles.insert_one(
+                {
+                    "name": "Unauthorized Title",
+                    "description": "",
+                    "is_active": True,
+                    "sort_order": 1,
+                    "created_by": admin["_id"],
+                    "created_at": now(),
+                    "updated_at": now(),
+                }
+            ).inserted_id
+            mongo.db.users.update_one({"_id": user["_id"]}, {"$set": {"must_change_password": False}})
+            user = mongo.db.users.find_one({"_id": user["_id"]})
+        login_as(user_client, user)
+        response = user_client.post(
+            "/profile/settings",
+            data={
+                "_csrf_token": csrf(user_client),
+                "action": "profile",
+                "username": "security_user",
+                "bio": "",
+                "contact": "13812345678",
+                "default_post_visibility": "public",
+                "default_follow_delay_days": "0",
+                "equipped_title_id": str(title_id),
+            },
+            follow_redirects=True,
+        )
+        with app.app_context():
+            user = mongo.db.users.find_one({"_id": user["_id"]})
+        check(
+            "user cannot equip unawarded title",
+            response.status_code == 200 and user.get("equipped_title_id") is None,
+        )
 
         with app.app_context():
             mongo.db.activities.insert_one(
